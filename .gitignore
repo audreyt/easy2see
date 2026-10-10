@@ -427,3 +427,10 @@ asg_client/StreamPackLite.zip
 # Local temp artifacts and generated decks
 tmp/
 output/
+
+# Easy2See fork: local Xcode build output (never commit .ipa/.xcarchive)
+.build/
+
+# Wrangler local dev state
+.wrangler/
+**/.wrangler/

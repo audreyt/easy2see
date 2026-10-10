@@ -8,5 +8,7 @@ export function createDeploymentAuthProvider(deployment: WorkspaceDeployment): D
       return new MicrosoftEntraDeploymentAuthProvider(deployment)
     case "mentra-account":
       throw new Error("mentra-account workspace auth is not supported in deployment schema v1")
+    case "local":
+      throw new Error("local auth needs no auth provider and must not reach this factory")
   }
 }

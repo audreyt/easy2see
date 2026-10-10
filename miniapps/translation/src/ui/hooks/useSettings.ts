@@ -1,8 +1,8 @@
 import {useEffect, useRef, useState} from "react"
 
-import type {TranslationSettings} from "../../shared/types"
+import type {RecordingNotice, TranslationSettings} from "../../shared/types"
 
-export type {TranslationSettings} from "../../shared/types"
+export type {RecordingNotice, TranslationSettings} from "../../shared/types"
 
 /**
  * useSettings — thin hook over the background channel bus.
@@ -16,6 +16,7 @@ export type {TranslationSettings} from "../../shared/types"
 export function useSettings() {
   const [settings, setSettings] = useState<TranslationSettings | null>(null)
   const [loading, setLoading] = useState(true)
+  const [recording, setRecording] = useState<RecordingNotice | null>(null)
   const mountedRef = useRef(true)
 
   useEffect(() => {
@@ -36,6 +37,12 @@ export function useSettings() {
         if (!mountedRef.current) return
         setSettings(payload as TranslationSettings)
         setLoading(false)
+      }),
+    )
+    offs.push(
+      on("translation:recording", (payload) => {
+        if (!mountedRef.current) return
+        setRecording(payload as RecordingNotice)
       }),
     )
 
@@ -81,15 +88,23 @@ export function useSettings() {
     return true
   }
 
+  const updateSaveRecording = async (enabled: boolean): Promise<boolean> => {
+    setSettings((prev) => (prev ? {...prev, saveRecording: enabled} : prev))
+    mentra.send("translation:set-save-recording", {enabled})
+    return true
+  }
+
   return {
     settings,
     loading,
     error: null as string | null,
+    recording,
     updateTargetLanguage,
     updateDisplayLines,
     updateDisplayWidth,
     updateWordBreaking,
     updateShowOriginalText,
     updateGlassesDisplayMode,
+    updateSaveRecording,
   }
 }

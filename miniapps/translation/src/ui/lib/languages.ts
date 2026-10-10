@@ -1,3 +1,5 @@
+import {chineseScript} from "../../shared/languages"
+
 export interface Language {
   code: string
   name: string
@@ -7,9 +9,15 @@ export interface Language {
 
 /**
  * Soniox supports transcription and translation between every pair in this
- * 60-language set. Keep the picker complete: the previous local-miniapp port
- * accidentally replaced the provider-backed list with only 11 popular
- * languages (later 12 when Vietnamese was added).
+ * set. Keep the picker complete: the previous local-miniapp port accidentally
+ * replaced the provider-backed list with only 11 popular languages (later 12
+ * when Vietnamese was added).
+ *
+ * Codes are the platform registry's subscription tags
+ * (SUPPORTED_TRANSCRIPTION_LANGUAGES): bare codes canonicalize to the
+ * registry default ("zh" -> "zh-CN"), so Chinese is split into its two
+ * registry tags — "zh-CN" (Simplified) and "zh-TW" (Traditional). "zh-Hant"
+ * is NOT a valid subscription tag and would throw at subscribe time.
  */
 export const TARGET_LANGUAGES: Language[] = [
   {code: "en", name: "English", nativeName: "English", flag: "🇺🇸"},
@@ -26,7 +34,8 @@ export const TARGET_LANGUAGES: Language[] = [
   {code: "bs", name: "Bosnian", nativeName: "Bosanski", flag: "🇧🇦"},
   {code: "bg", name: "Bulgarian", nativeName: "Български", flag: "🇧🇬"},
   {code: "ca", name: "Catalan", nativeName: "Català", flag: "🇪🇸"},
-  {code: "zh", name: "Chinese", nativeName: "中文", flag: "🇨🇳"},
+  {code: "zh-CN", name: "Chinese (Simplified)", nativeName: "简体中文", flag: "🇨🇳"},
+  {code: "zh-TW", name: "Chinese (Traditional)", nativeName: "繁體中文", flag: "🇹🇼"},
   {code: "hr", name: "Croatian", nativeName: "Hrvatski", flag: "🇭🇷"},
   {code: "cs", name: "Czech", nativeName: "Čeština", flag: "🇨🇿"},
   {code: "da", name: "Danish", nativeName: "Dansk", flag: "🇩🇰"},
@@ -75,14 +84,21 @@ export const TARGET_LANGUAGES: Language[] = [
 ]
 
 /**
- * Look up a language by code. Accepts both bare codes ("es") and BCP-47 tags
- * ("es-ES", "en-US") — the primary subtag is matched, so target languages that
- * arrive canonicalized (e.g. from the translation subscription) still resolve
- * to a flag and name instead of falling back to the raw code + white flag.
+ * Look up a language by code. Exact tag match first ("zh-TW" -> Traditional),
+ * then a script-aware Chinese check so Traditional-script tags the picker
+ * doesn't list verbatim ("zh-HK", "zh-Hant") still resolve to the Traditional
+ * entry, then the primary subtag so canonicalized tags ("es-ES" -> "es",
+ * stored "zh" -> Simplified) resolve to a flag and name instead of falling
+ * back to the raw code + white flag.
  */
 function findLanguage(code: string): Language | undefined {
-  const primary = (code ?? "").split("-")[0].toLowerCase()
-  return TARGET_LANGUAGES.find((l) => l.code === primary)
+  const tag = (code ?? "").toLowerCase()
+  const exact = TARGET_LANGUAGES.find((l) => l.code.toLowerCase() === tag)
+  if (exact) return exact
+  const script = chineseScript(code)
+  if (script) return TARGET_LANGUAGES.find((l) => chineseScript(l.code) === script)
+  const primary = tag.split("-")[0]
+  return TARGET_LANGUAGES.find((l) => l.code.split("-")[0].toLowerCase() === primary)
 }
 
 export function getLanguageName(code: string): string {

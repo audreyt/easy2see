@@ -45,28 +45,34 @@ export function TranscriptItem({
         ${isFirst ? "rounded-t-2xl" : ""}
         ${isLast ? "rounded-b-2xl" : ""}`}
     >
-      {/* Header with speaker badge, name, and timestamp */}
+      {/* Header with speaker badge, name, and timestamp. On-device
+          transcription has no diarizer, so transcript.speaker is "" and the
+          badge/name stay hidden — a fake "Speaker 1" would mislead. */}
       <div className="flex items-center gap-2">
-        {/* Numbered speaker badge */}
-        <div
-          className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
-          style={{ backgroundColor: colors.bg, minWidth: "20px" }}
-        >
-          <span
-            className="text-[10px] font-bold font-['Red_Hat_Display'] leading-none"
-            style={{ color: readableTextColor(colors.bg) }}
-          >
-            {speakerNumber}
-          </span>
-        </div>
+        {transcript.speaker !== "" && (
+          <>
+            {/* Numbered speaker badge */}
+            <div
+              className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: colors.bg, minWidth: "20px" }}
+            >
+              <span
+                className="text-[10px] font-bold font-['Red_Hat_Display'] leading-none"
+                style={{ color: readableTextColor(colors.bg) }}
+              >
+                {speakerNumber}
+              </span>
+            </div>
 
-        {/* Speaker name */}
-        <span
-          className="text-sm font-bold font-['Red_Hat_Display'] leading-5"
-          style={{ color: colors.text }}
-        >
-          {transcript.speaker}
-        </span>
+            {/* Speaker name */}
+            <span
+              className="text-sm font-bold font-['Red_Hat_Display'] leading-5"
+              style={{ color: colors.text }}
+            >
+              {transcript.speaker}
+            </span>
+          </>
+        )}
 
         {/* Timestamp — formatted in the device's local timezone */}
         <span className="text-gray-600 dark:text-zinc-300 text-xs font-normal font-['Red_Hat_Display'] leading-4 ml-auto">

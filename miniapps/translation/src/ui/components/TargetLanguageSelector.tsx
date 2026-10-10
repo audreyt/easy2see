@@ -2,7 +2,7 @@ import {Check, Search} from "lucide-react"
 import type {CSSProperties} from "react"
 import {useEffect, useState} from "react"
 
-import {TARGET_LANGUAGES, getFlagEmoji} from "../lib/languages"
+import {TARGET_LANGUAGES, getFlagEmoji, getLanguageName} from "../lib/languages"
 
 interface TargetLanguageSelectorProps {
   currentTargetLanguage: string
@@ -55,7 +55,7 @@ export function TargetLanguageSelector({
             style={{backgroundColor: accentColor, color: accentForeground}}>
             <span className="text-lg">{getFlagEmoji(targetLanguage)}</span>
             <span className="text-sm font-semibold font-['Red_Hat_Display']">
-              {TARGET_LANGUAGES.find((lang) => lang.code === targetLanguage)?.name ?? targetLanguage}
+              {getLanguageName(targetLanguage)}
             </span>
           </div>
           <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Any source language</span>

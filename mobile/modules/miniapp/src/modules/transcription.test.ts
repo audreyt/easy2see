@@ -18,8 +18,8 @@ function mockSession() {
   const subscribes: string[] = []
   const requests: Array<Record<string, unknown>> = []
   const session = {
-    _subscribe: (stream: string) => {
-      subscribes.push(stream)
+    _subscribe: (stream: string, _handler: unknown, options?: {forceLocal?: boolean}) => {
+      subscribes.push(options?.forceLocal === true ? `${stream} [forceLocal]` : stream)
       return () => {}
     },
     sendOneShot: () => {
@@ -102,5 +102,13 @@ describe("TranslationModule language validation", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(() => mod.to("Chinese" as any, () => {})).toThrow(MiniappValidationError)
     expect(subscribes).toEqual([])
+  })
+
+  test("to forwards forceLocal to the subscription", () => {
+    const {session, subscribes} = mockSession()
+    const mod = new TranslationModule(session)
+    mod.to("zh-TW", () => {}, {forceLocal: true})
+    mod.to("en-US", () => {})
+    expect(subscribes).toEqual(["translation:*:zh-TW [forceLocal]", "translation:*:en-US"])
   })
 })

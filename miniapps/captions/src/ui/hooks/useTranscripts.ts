@@ -1,8 +1,8 @@
 import {useEffect, useRef, useState} from "react"
 
-import type {CloudClientStatus, DisplayPreview, LiveTranscript, Transcript} from "../../shared/types"
+import type {CloudClientStatus, DisplayPreview, LiveTranscript, SpeechStatus, Transcript} from "../../shared/types"
 
-export type {CloudClientStatus, Transcript, DisplayPreview} from "../../shared/types"
+export type {CloudClientStatus, SpeechStatus, Transcript, DisplayPreview} from "../../shared/types"
 
 const TRANSCRIPT_TIMING_TELEMETRY = (globalThis as {__DEV__?: boolean}).__DEV__ === true
 
@@ -29,6 +29,7 @@ export function useTranscripts() {
     status: "disconnected",
     audioTransport: "none",
   })
+  const [speechStatus, setSpeechStatus] = useState<SpeechStatus | null>(null)
   const [isRecording, setIsRecording] = useState(false)
   const mountedRef = useRef(true)
 
@@ -43,11 +44,13 @@ export function useTranscripts() {
           transcripts: Transcript[]
           displayPreview: DisplayPreview | null
           cloudStatus?: CloudClientStatus
+          speechStatus?: SpeechStatus | null
         }
         if (!mountedRef.current) return
         setTranscripts(snap.transcripts || [])
         setDisplayPreview(snap.displayPreview ?? null)
         if (snap.cloudStatus) setCloudStatus(snap.cloudStatus)
+        setSpeechStatus(snap.speechStatus ?? null)
         setConnected(true)
       }),
     )
@@ -70,6 +73,12 @@ export function useTranscripts() {
       on("captions:cloud-status", (payload) => {
         if (!mountedRef.current) return
         setCloudStatus(payload as CloudClientStatus)
+      }),
+    )
+    offs.push(
+      on("captions:speech-status", (payload) => {
+        if (!mountedRef.current) return
+        setSpeechStatus(payload as SpeechStatus | null)
       }),
     )
 
@@ -102,19 +111,22 @@ export function useTranscripts() {
     mentra.send("captions:clear", {})
   }
 
-  // No transport to reconnect in the local runtime — kept for prop parity.
-  const reconnect = () => {}
+  // Retry after the no-speech-model hint: re-subscribe + re-arm the watchdog.
+  const retrySpeech = () => {
+    setSpeechStatus(null)
+    mentra.send("captions:retry-speech", {})
+  }
 
   return {
     transcripts,
     connected,
-    error: null as string | null,
     isRecording,
     toggleRecording,
     clearTranscripts,
-    reconnect,
+    retrySpeech,
     displayPreview,
     cloudStatus,
+    speechStatus,
   }
 }
 

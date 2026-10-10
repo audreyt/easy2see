@@ -326,11 +326,31 @@ struct ViewState {
     private var lastLc3ReceivedAt: Int64?
     private var lastPcmProducedAt: Int64?
     private var lastLc3Sequence: Int?
+    /// Glasses-mic feed diagnostics (local-translation starvation probe):
+    /// one-shot log on the first LC3 frame after the mic is enabled, plus a
+    /// 5s rolling summary of frames received and decode failures.
+    private var glassesMicFirstFrameLogged = false
+    private var glassesMicWindowStart: TimeInterval = 0
+    private var glassesMicWindowFrames: Int64 = 0
+    private var glassesMicWindowDecodeFailures: Int64 = 0
     private var micReinitTimer: Timer?
 
     /// STT:
     #if !os(macOS) && (!SWIFT_PACKAGE || MENTRA_FEATURE_LOCAL_STT)
     private let transcriber = SherpaOnnxTranscriber()
+    #endif
+
+    /// On-device Apple Speech + Translation pipeline (the Easy2Say stack).
+    /// Created lazily on the first setLocalTranslation(active:true) so the
+    /// speech-recognizer lanes only exist while a miniapp asked for them.
+    #if !os(macOS)
+    private var localTranslationPipeline: LocalTranslationPipeline?
+    #endif
+    /// On-device Apple Speech transcribe-only pipeline (Contract A). Shares
+    /// LocalTranslationPipeline's lane machinery in transcription mode;
+    /// created lazily on the first setLocalTranscription(active:true).
+    #if !os(macOS)
+    private var localTranscriptionPipeline: LocalTranslationPipeline?
     #endif
 
     var viewStates: [ViewState] = [
@@ -395,6 +415,8 @@ struct ViewState {
                 self?.checkAndReinitGlassesMic()
             }
         }
+
+        E2sAudioInjector.shared.startIfRequested()
     }
 
     // MARK: - AUX Voice Data Handling
@@ -430,15 +452,23 @@ struct ViewState {
      */
     func handleGlassesMicData(_ lc3Data: Data, _ frameSize: Int = 20, sequenceNumber: Int? = nil) {
         recordLc3Packet(sequenceNumber: sequenceNumber)
+        if !glassesMicFirstFrameLogged {
+            glassesMicFirstFrameLogged = true
+            Bridge.log("MAN: first glasses mic frame received bytes=\(lc3Data.count) frameSize=\(frameSize)")
+        }
+        glassesMicWindowFrames += 1
+        defer { logGlassesMicWindowIfDue() }
         guard let lc3Converter = lc3Converter else {
             Bridge.log("MAN: LC3 converter not initialized")
             recordMicDecodeFailure()
+            glassesMicWindowDecodeFailures += 1
             return
         }
 
         guard lc3Data.count > 2 else {
             Bridge.log("MAN: Received invalid LC3 data size: \(lc3Data.count)")
             recordMicDecodeFailure()
+            glassesMicWindowDecodeFailures += 1
             return
         }
 
@@ -446,11 +476,24 @@ struct ViewState {
         guard pcmData.count > 0 else {
             Bridge.log("MAN: Failed to decode glasses LC3 audio")
             recordMicDecodeFailure()
+            glassesMicWindowDecodeFailures += 1
             return
         }
         // Forward to handlePcm which handles SDK audio events and encoding.
         lastPcmProducedAt = nowMs()
         handlePcm(pcmData)
+    }
+
+    /// 5s rolling summary of the glasses mic feed — proves frames are
+    /// arriving (or that the feed starved) without per-frame logging.
+    private func logGlassesMicWindowIfDue() {
+        let now = Date().timeIntervalSince1970
+        if glassesMicWindowStart == 0 { glassesMicWindowStart = now }
+        guard now - glassesMicWindowStart >= 5 else { return }
+        Bridge.log("MAN: glasses mic feed frames=\(glassesMicWindowFrames) decodeFailures=\(glassesMicWindowDecodeFailures)")
+        glassesMicWindowStart = now
+        glassesMicWindowFrames = 0
+        glassesMicWindowDecodeFailures = 0
     }
 
     func reportGlassesAudioActivity() {
@@ -518,7 +561,11 @@ struct ViewState {
         Bridge.sendMicHealth(micHealth(), reason: "decode_failure")
     }
 
-    func handlePcm(_ pcmData: Data) {
+    func handlePcm(_ pcmData: Data, injected: Bool = false) {
+        // E2S dev-only: while audio injection is active only injected chunks
+        // flow downstream; real mic/glasses PCM is dropped (still counted in
+        // handleGlassesMicData for feed diagnostics).
+        if E2sAudioInjector.shared.isActive && !injected { return }
         handleSendingPcm(pcmData)
 
         // Send PCM to local transcriber.
@@ -526,6 +573,19 @@ struct ViewState {
         if shouldSendTranscript || localSttFallbackActive {
             transcriber.acceptAudio(pcm16le: pcmData)
         }
+#endif
+
+        // Feed the on-device translation pipeline (Apple Speech lanes). The
+        // pipeline is nil unless a miniapp subscribed with forceLocal.
+#if !os(macOS)
+        localTranslationPipeline?.acceptAudio(pcm16le: pcmData)
+#endif
+
+        // Feed the transcribe-only Apple Speech pipeline (Contract A). The
+        // pipeline is nil unless a miniapp subscribed with forceLocal and an
+        // Apple-resolved engine.
+#if !os(macOS)
+        localTranscriptionPipeline?.acceptAudio(pcm16le: pcmData)
 #endif
     }
 
@@ -971,6 +1031,85 @@ struct ViewState {
         Bridge.log("MAN: Local STT is not included in this SwiftPM build")
         #endif
     }
+
+    /**
+     * Toggle the on-device Apple Speech + Translation pipeline (the Easy2Say
+     * stack). `pairs` are [{source, target}] BCP-47 wire tags from the engine's
+     * LocalTranslationCoordinator; "auto"/"*" sources resolve to the device's
+     * preferred languages inside the pipeline.
+     */
+    func setLocalTranslation(active: Bool, pairs: [[String: String]], probeReason: String? = nil) {
+        #if !os(macOS)
+        if active {
+            if localTranslationPipeline == nil {
+                localTranslationPipeline = LocalTranslationPipeline()
+            }
+            localTranslationPipeline?.configure(pairs: pairs, probeReason: probeReason)
+        } else {
+            localTranslationPipeline?.shutdown()
+            localTranslationPipeline = nil
+        }
+        setMicState()
+        #else
+        Bridge.log("MAN: Local translation is not supported on macOS")
+        #endif
+    }
+
+    /**
+     * Whether the on-device translation hop can serve `pairs` right now —
+     * iOS 18+, speech authorization, an on-device recognizer lane, and a
+     * LanguageAvailability verdict for the target. The engine's
+     * LocalTranslationCoordinator calls this before activating so an
+     * unavailable hop falls back to the cloud instead of going silent.
+     */
+    func probeLocalTranslation(pairs: [[String: String]]) async -> [String: Any] {
+        #if !os(macOS)
+        let verdict = await LocalTranslationPipeline.probe(pairs: pairs)
+        return ["available": verdict.available, "reason": verdict.reason]
+        #else
+        return ["available": false, "reason": "unsupported-platform"]
+        #endif
+    }
+
+    /**
+     * Toggle the transcribe-only Apple Speech pipeline (Contract A).
+     * `locales` are BCP-47 wire tags from the engine's
+     * LocalTranscriptionCoordinator; "auto"/"*" expands to the device's
+     * preferred languages inside the pipeline. Emits `local_transcription`
+     * events with provider "apple-speech" — no translation engine involved.
+     */
+    func setLocalTranscription(active: Bool, locales: [String]) {
+        #if !os(macOS)
+        if active {
+            if localTranscriptionPipeline == nil {
+                localTranscriptionPipeline = LocalTranslationPipeline()
+            }
+            localTranscriptionPipeline?.configureTranscription(locales: locales)
+        } else {
+            localTranscriptionPipeline?.shutdown()
+            localTranscriptionPipeline = nil
+        }
+        setMicState()
+        #else
+        Bridge.log("MAN: Local transcription is not supported on macOS")
+        #endif
+    }
+
+    /**
+     * Whether the transcribe-only hop can serve `locales` right now — speech
+     * authorization plus an on-device recognizer lane. The engine's
+     * LocalTranscriptionCoordinator calls this before resolving a forceLocal
+     * subscription to the Apple engine.
+     */
+    func probeLocalTranscription(locales: [String]) async -> [String: Any] {
+        #if !os(macOS)
+        let verdict = await LocalTranslationPipeline.probeTranscription(locales: locales)
+        return ["available": verdict.available, "reason": verdict.reason]
+        #else
+        return ["available": false, "reason": "unsupported-platform"]
+        #endif
+    }
+
 
     // MARK: - connection state management
 
@@ -1750,7 +1889,21 @@ struct ViewState {
         #if !os(macOS) && (!SWIFT_PACKAGE || MENTRA_FEATURE_LOCAL_STT)
         transcriber.setActive(willSendTranscript)
         #endif
-        micEnabled = willSendPcm || willSendTranscript
+        #if !os(macOS)
+        let willSendTranslation = localTranslationPipeline != nil
+        #else
+        let willSendTranslation = false
+        #endif
+        let nextMicEnabled = willSendPcm || willSendTranscript || willSendTranslation
+        if nextMicEnabled, !micEnabled {
+            // Mic (re)enabled: re-arm the first-frame log and start a fresh
+            // feed window so the next run's diagnostics are attributable.
+            glassesMicFirstFrameLogged = false
+            glassesMicWindowStart = 0
+            glassesMicWindowFrames = 0
+            glassesMicWindowDecodeFailures = 0
+        }
+        micEnabled = nextMicEnabled
         updateMicState()
     }
 

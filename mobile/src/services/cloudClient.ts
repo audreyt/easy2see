@@ -17,6 +17,7 @@ import {cloudClientService} from "@mentra/engine-host-internal"
 import {SETTINGS, engine} from "@mentra/engine"
 import {devServerHost} from "@/utils/cloudClient/devHost"
 import {deploymentStore, type ActiveDeployment} from "@/services/deployment"
+import {isEasy2SeeBuild} from "@/services/deployment/officialManifest"
 import {deploymentDebugScope, resolveDeploymentManifest} from "@/services/deployment/debugOverrides"
 
 type Lc3FrameSizeBytes = 20 | 40 | 60
@@ -44,6 +45,8 @@ export function cloudConfigValues(): {
   coreUrl: string | null
   runtimeUrl: string | null
   audioFrameSizeBytes: number
+  localOnly?: boolean
+  useAppSupportStorage?: boolean
   devServerHost: () => string | undefined
   runtimeRealtimeSession?: boolean
   localMiniappAllowlist?: string[] | null
@@ -85,6 +88,13 @@ export function deploymentCloudConfigValues(deployment: ActiveDeployment): Retur
     privateMeetings: deployment.kind === "workspace",
     coreUrl: manifest.services.coreUrl,
     runtimeUrl: manifest.services.runtimeUrl,
+    // Local-auth deployments (Easy2See) have no cloud at all: engine must not
+    // construct the cloud client, open the runtime socket, or watch auth.
+    localOnly: manifest.auth.mode === "local",
+    // EASY2SEE relocates app-internal storage (blobs, models, MMKV) into
+    // Library/Application Support so Files-visible Documents holds only
+    // user-meaningful files. Packaged-config flag, not a manifest field.
+    useAppSupportStorage: isEasy2SeeBuild(),
     runtimeRealtimeSession: manifest.features.runtimeRealtimeSession,
     // Island's local registry contains both embedded SYSTEM miniapps and
     // manifest-managed userland miniapps. Keep the manifest concepts separate,

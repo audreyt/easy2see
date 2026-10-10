@@ -60,6 +60,11 @@ jest.mock("@/utils/AlertUtils", () => ({
   default: jest.fn(),
 }))
 
+const mockIsEasy2SeeBuild = jest.fn(() => false)
+jest.mock("@/services/deployment/officialManifest", () => ({
+  isEasy2SeeBuild: (...args: unknown[]) => mockIsEasy2SeeBuild(...args),
+}))
+
 describe("MentraOS onboarding", () => {
   beforeEach(() => {
     jest.clearAllMocks()
@@ -67,6 +72,7 @@ describe("MentraOS onboarding", () => {
   })
 
   it("uses the shared Mentra Live onboarding preset for the full tutorial", () => {
+    mockIsEasy2SeeBuild.mockReturnValue(false)
     render(<MentraOSOnboarding />)
 
     expect(mockScreen).toHaveBeenCalledWith(
@@ -86,13 +92,14 @@ describe("MentraOS onboarding", () => {
     )
 
     const {steps} = mockOnboardingGuide.mock.calls[0][0]
-    expect(steps).toHaveLength(5)
+    expect(steps).toHaveLength(6)
     expect(steps.map((step: {title: string}) => step.title)).toEqual([
       "onboarding:osWelcomeTitle",
       "onboarding:osStartMiniappTitle",
       "onboarding:osMinimizeCloseTitle",
       "onboarding:osSwitchMiniappsTitle",
       "onboarding:osMiniappDrawerTitle",
+      "onboarding:osMovedMiniappsTitle",
     ])
     expect(steps[0]).toEqual(
       expect.objectContaining({
@@ -132,6 +139,32 @@ describe("MentraOS onboarding", () => {
         ]),
       }),
     )
+    expect(steps[5]).toEqual(
+      expect.objectContaining({
+        type: "image",
+        testID: "mentraos-onboarding-hero-5",
+        title: "onboarding:osMovedMiniappsTitle",
+        details: expect.arrayContaining([
+          expect.objectContaining({title: "onboarding:osMissingMiniappTitle"}),
+          expect.objectContaining({title: "onboarding:osMentraOsLegacyTitle"}),
+        ]),
+      }),
+    )
+  })
+
+  it("omits the MentraOS Legacy step in Easy2See builds", () => {
+    mockIsEasy2SeeBuild.mockReturnValue(true)
+    render(<MentraOSOnboarding />)
+
+    const {steps} = mockOnboardingGuide.mock.calls[0][0]
+    expect(steps).toHaveLength(5)
+    expect(steps.map((step: {title: string}) => step.title)).toEqual([
+      "onboarding:osWelcomeTitle",
+      "onboarding:osStartMiniappTitle",
+      "onboarding:osMinimizeCloseTitle",
+      "onboarding:osSwitchMiniappsTitle",
+      "onboarding:osMiniappDrawerTitle",
+    ])
   })
 
   it("confirms before persisting completion when the user skips", () => {

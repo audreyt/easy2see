@@ -1,8 +1,8 @@
 import {useCallback, useEffect, useRef, useState} from "react"
 
-import type {LineWidth, PlaybackStatus, TeleprompterSettings, TeleprompterSnapshot} from "../../shared/types"
+import type {LineWidth, PlaybackStatus, RecordingNotice, TeleprompterSettings, TeleprompterSnapshot} from "../../shared/types"
 
-export type {LineWidth, PlaybackStatus, TeleprompterSettings} from "../../shared/types"
+export type {LineWidth, PlaybackStatus, RecordingNotice, TeleprompterSettings} from "../../shared/types"
 
 /**
  * useTeleprompter — single hook over the background channel bus.
@@ -20,6 +20,7 @@ export type {LineWidth, PlaybackStatus, TeleprompterSettings} from "../../shared
 export function useTeleprompter() {
   const [settings, setSettings] = useState<TeleprompterSettings | null>(null)
   const [status, setStatus] = useState<PlaybackStatus | null>(null)
+  const [recording, setRecording] = useState<RecordingNotice | null>(null)
   const [connected, setConnected] = useState(false)
   const mountedRef = useRef(true)
 
@@ -50,6 +51,13 @@ export function useTeleprompter() {
       on("tp:settings-update", (payload) => {
         if (!mountedRef.current) return
         setSettings(payload as TeleprompterSettings)
+      }),
+    )
+
+    offs.push(
+      on("tp:recording", (payload) => {
+        if (!mountedRef.current) return
+        setRecording(payload as RecordingNotice)
       }),
     )
 
@@ -115,6 +123,13 @@ export function useTeleprompter() {
     },
     [patchSettings],
   )
+  const setSaveRecording = useCallback(
+    (enabled: boolean) => {
+      patchSettings({saveRecording: enabled})
+      mentra.send("tp:set-save-recording", {enabled})
+    },
+    [patchSettings],
+  )
 
   // ── Transport ──────────────────────────────────────────────────────────
   const play = useCallback(() => mentra.send("tp:play", {}), [])
@@ -126,6 +141,7 @@ export function useTeleprompter() {
   return {
     settings,
     status,
+    recording,
     connected,
     setScript,
     setWpm,
@@ -134,6 +150,7 @@ export function useTeleprompter() {
     setVoiceFollow,
     setAutoRestart,
     setShowTimecode,
+    setSaveRecording,
     play,
     pause,
     restart,

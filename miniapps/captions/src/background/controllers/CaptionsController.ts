@@ -23,9 +23,10 @@
  *        -> session.ui.send(channel, payload)
  *
  * The on-device TranscriptionData has no utteranceId/speakerId (only text /
- * isFinal / language), so the legacy interim->final path is taken and every
- * utterance is attributed to "Speaker 1". The diarization-aware branches from
- * the cloud app are preserved verbatim for forward-compat but won't fire here.
+ * isFinal / language), so the legacy interim->final path is taken and no
+ * speaker label is shown — there is no on-device diarizer on this stack, and
+ * a fake "Speaker 1" would mislead. The diarization-aware branches from the
+ * cloud app are preserved verbatim for forward-compat but won't fire here.
  *
  * Subscriptions are bound to the session lifetime, not any React component.
  * Closing the WebView does NOT stop transcription — the controller survives
@@ -39,11 +40,12 @@ import type {
   MiniappSession,
   TranscriptionData,
   TranscriptionLanguage,
+  TranscriptionOptions,
   UnsubscribeFn,
 } from "@mentra/miniapp/background"
 
 import {CaptionsFormatter} from "../../core/CaptionsFormatter"
-import {convertToPinyin} from "../../core/ChineseUtils"
+import {engineFor, toLocalLanguageTag} from "../../shared/languages"
 import type {Channels} from "../../shared/channels"
 import {
   CAPTION_TIMEOUT_OPTIONS_SECONDS,
@@ -53,6 +55,7 @@ import {
   type CaptionsDisplayCapabilities,
   type CaptionsSnapshot,
   type DisplayPreview,
+  type SpeechStatus,
   type Transcript,
 } from "../../shared/types"
 
@@ -73,7 +76,6 @@ interface TranscriptEntry {
 const DEFAULT_SETTINGS: CaptionSettings = {
   language: "auto",
   languageHints: [],
-  useOfflineStt: false,
   displayLines: 3,
   displayWidth: 1, // 0=Narrow, 1=Medium, 2=Wide
   captionPosition: "top",
@@ -84,7 +86,6 @@ const DEFAULT_SETTINGS: CaptionSettings = {
 const STORAGE_KEYS = {
   language: "language",
   languageHints: "languageHints",
-  useOfflineStt: "useOfflineStt",
   displayLines: "displayLines",
   displayWidth: "displayWidth",
   captionPosition: "captionPosition",
@@ -93,12 +94,33 @@ const STORAGE_KEYS = {
 } as const
 const TRANSCRIPT_TIMING_TELEMETRY = (globalThis as {__DEV__?: boolean}).__DEV__ === true
 
+/**
+ * On-device-only subscription options. `engine` is Contract A: "auto" lets
+ * the host route Apple-capable locales to Apple Speech (zh-TW/zh-HK and
+ * locales Sherpa lacks) and the rest to the downloadable Sherpa model. The
+ * current SDK predates the field — it is forwarded verbatim in the options
+ * object so it takes effect the moment the host learns it; until then every
+ * subscription is served by Sherpa, which is exactly what `engineFor`
+ * reports for "auto".
+ */
+type LocalTranscriptionOptions = TranscriptionOptions & {engine?: "auto" | "sherpa" | "apple"}
+const LOCAL_TRANSCRIPTION_OPTIONS: LocalTranscriptionOptions = {forceLocal: true, engine: "auto"}
+
+/**
+ * How long to wait for the FIRST transcript after (re)subscribing before
+ * showing the no-speech-model hint. Mirrors the teleprompter's 15s stall
+ * window: long enough that a quiet room doesn't false-positive, short enough
+ * that a missing model never looks like a frozen blank screen.
+ */
+const SPEECH_STALL_MS = 15000
+
 export class CaptionsController {
   private subscribed = false
   private readonly unsubs: Array<() => void> = []
 
   private transcriptionCleanup: UnsubscribeFn | null = null
   private inactivityTimer: ReturnType<typeof setTimeout> | null = null
+  private speechWatchdog: ReturnType<typeof setTimeout> | null = null
 
   // session.ui, retyped against this miniapp's channel registry. The SDK types
   // `session.ui` as UIModule<default-channels>; cast through unknown to bind it
@@ -126,7 +148,14 @@ export class CaptionsController {
   private activeInterim: {text: string; speakerId?: string; speakerChanged: boolean} | null = null
   private cloudStatus: CloudClientStatus = {status: "disconnected", audioTransport: "none"}
 
-  constructor(private readonly session: MiniappSession) {}
+  /** Non-null while the no-transcript hint is showing (phone + glasses). */
+  private speechStatus: SpeechStatus | null = null
+
+  constructor(
+    private readonly session: MiniappSession,
+    /** Test seam: override the no-transcript watchdog window. */
+    private readonly speechStallMs: number = SPEECH_STALL_MS,
+  ) {}
 
   /** Idempotent — safe to call multiple times. */
   async start(): Promise<void> {
@@ -171,6 +200,11 @@ export class CaptionsController {
       clearTimeout(this.inactivityTimer)
       this.inactivityTimer = null
     }
+    if (this.speechWatchdog) {
+      clearTimeout(this.speechWatchdog)
+      this.speechWatchdog = null
+    }
+    this.speechStatus = null
     for (const u of this.unsubs) {
       try {
         u()
@@ -213,11 +247,6 @@ export class CaptionsController {
       }),
     )
     this.unsubs.push(
-      this.ui.on("captions:set-use-offline-stt", ({enabled}) => {
-        void this.setUseOfflineStt(enabled)
-      }),
-    )
-    this.unsubs.push(
       this.ui.on("captions:set-display-lines", ({lines}) => {
         void this.setDisplayLines(lines)
       }),
@@ -247,6 +276,13 @@ export class CaptionsController {
         this.clearTranscripts()
       }),
     )
+    this.unsubs.push(
+      this.ui.on("captions:retry-speech", () => {
+        // Re-subscribing re-arms the watchdog; if a model was just installed
+        // the fresh subscription picks it up.
+        this.subscribeTranscription()
+      }),
+    )
   }
 
   private sendSnapshot(): void {
@@ -256,6 +292,7 @@ export class CaptionsController {
       displayPreview: this.lastDisplayPreview,
       cloudStatus: {...this.cloudStatus},
       displayCapabilities: this.getDisplayCapabilities(),
+      speechStatus: this.speechStatus,
     }
     this.ui.send("captions:snapshot", snapshot)
   }
@@ -266,32 +303,35 @@ export class CaptionsController {
 
   private async loadSettings(): Promise<void> {
     try {
-      const [language, hintsRaw, useOfflineSttRaw, linesRaw, widthRaw, positionRaw, wbRaw, timeoutRaw] =
-        await Promise.all([
-          this.session.storage.get(STORAGE_KEYS.language),
-          this.session.storage.get(STORAGE_KEYS.languageHints),
-          this.session.storage.get(STORAGE_KEYS.useOfflineStt),
-          this.session.storage.get(STORAGE_KEYS.displayLines),
-          this.session.storage.get(STORAGE_KEYS.displayWidth),
-          this.session.storage.get(STORAGE_KEYS.captionPosition),
-          this.session.storage.get(STORAGE_KEYS.wordBreaking),
-          this.session.storage.get(STORAGE_KEYS.captionTimeoutSeconds),
-        ])
+      const [language, hintsRaw, linesRaw, widthRaw, positionRaw, wbRaw, timeoutRaw] = await Promise.all([
+        this.session.storage.get(STORAGE_KEYS.language),
+        this.session.storage.get(STORAGE_KEYS.languageHints),
+        this.session.storage.get(STORAGE_KEYS.displayLines),
+        this.session.storage.get(STORAGE_KEYS.displayWidth),
+        this.session.storage.get(STORAGE_KEYS.captionPosition),
+        this.session.storage.get(STORAGE_KEYS.wordBreaking),
+        this.session.storage.get(STORAGE_KEYS.captionTimeoutSeconds),
+      ])
 
-      this.settings.language = language || "auto"
+      // Sanitize against the on-device table: a stored cloud-only language
+      // (or the retired "Chinese (Pinyin)" pseudo-entry) would subscribe to a
+      // stream that can never produce a transcript — fall back to auto.
+      this.settings.language = language === "auto" ? "auto" : (toLocalLanguageTag(language ?? undefined) ?? "auto")
 
       this.settings.languageHints = (() => {
         if (!hintsRaw) return []
         try {
           const parsed = JSON.parse(hintsRaw)
-          return Array.isArray(parsed) ? parsed : []
+          if (!Array.isArray(parsed)) return []
+          // Keep only hints an on-device engine can serve, normalized to
+          // registry tags.
+          return parsed
+            .map((h) => (typeof h === "string" ? toLocalLanguageTag(h) : null))
+            .filter((h): h is string => h !== null)
         } catch {
           return []
         }
       })()
-
-      this.settings.useOfflineStt =
-        useOfflineSttRaw == null ? DEFAULT_SETTINGS.useOfflineStt : useOfflineSttRaw === "true"
 
       this.settings.displayLines = (() => {
         if (!linesRaw) return 3
@@ -322,8 +362,10 @@ export class CaptionsController {
   }
 
   private async setLanguage(language: string): Promise<void> {
-    this.settings.language = language
-    await this.persist(STORAGE_KEYS.language, language)
+    // Same sanitize as loadSettings: a cloud-only code must never become a
+    // subscription that silently produces nothing.
+    this.settings.language = language === "auto" ? "auto" : (toLocalLanguageTag(language) ?? "auto")
+    await this.persist(STORAGE_KEYS.language, this.settings.language)
     // Re-subscribe transcription with the new language + hints.
     this.subscribeTranscription()
     this.broadcastSettings()
@@ -331,17 +373,13 @@ export class CaptionsController {
 
   private async setLanguageHints(hints: string[]): Promise<void> {
     this.settings.languageHints = hints
-    await this.persist(STORAGE_KEYS.languageHints, JSON.stringify(hints))
+      .map((h) => toLocalLanguageTag(h))
+      .filter((h): h is string => h !== null)
+    await this.persist(STORAGE_KEYS.languageHints, JSON.stringify(this.settings.languageHints))
     this.subscribeTranscription()
     this.broadcastSettings()
   }
 
-  private async setUseOfflineStt(enabled: boolean): Promise<void> {
-    this.settings.useOfflineStt = enabled
-    await this.persist(STORAGE_KEYS.useOfflineStt, enabled.toString())
-    this.subscribeTranscription()
-    this.broadcastSettings()
-  }
 
   private async setDisplayLines(lines: number): Promise<void> {
     if (lines < 2 || lines > 5) return
@@ -428,7 +466,10 @@ export class CaptionsController {
 
     const language = this.settings.language
     const hints = this.settings.languageHints
-    const options = this.settings.useOfflineStt ? {forceLocal: true} : {}
+    // Always on-device: forceLocal keeps every transcript on the phone and
+    // engine:"auto" lets the host route Apple-capable locales to Apple
+    // Speech (Contract A). There is no cloud fallback to opt out of.
+    const options = LOCAL_TRANSCRIPTION_OPTIONS
 
     try {
       if (hints.length > 0) {
@@ -467,6 +508,50 @@ export class CaptionsController {
         void this.handleTranscription(data)
       }, options)
     }
+
+    this.armSpeechWatchdog()
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // No-transcript watchdog
+  //
+  // A missing speech model fails SILENTLY: the subscription succeeds, the
+  // mic streams, and no transcript event ever arrives — the user sees a
+  // frozen "Waiting for speech." screen forever. Bound that window: if no
+  // transcript lands within speechStallMs of (re)subscribing, show a visible
+  // hint on the phone and a short line on the glasses. The first transcript
+  // clears both. Re-armed on every subscribe (language change, retry).
+  // ───────────────────────────────────────────────────────────────────────
+
+  private armSpeechWatchdog(): void {
+    if (this.speechWatchdog) {
+      clearTimeout(this.speechWatchdog)
+      this.speechWatchdog = null
+    }
+    this.speechWatchdog = setTimeout(() => {
+      this.speechWatchdog = null
+      this.showSpeechUnavailable()
+    }, this.speechStallMs)
+  }
+
+  private showSpeechUnavailable(): void {
+    // The hint names the remedy for the engine this language routes to.
+    // Sherpa languages need the downloadable model; Apple-routed languages
+    // need the system speech assets / permission. "auto" is Sherpa-served
+    // today, so it gets the Sherpa remedy.
+    const hint =
+      engineFor(this.settings.language) === "sherpa"
+        ? "No speech model — Settings › Speech"
+        : "On-device speech unavailable — check Settings › Speech Recognition"
+    this.speechStatus = {hint}
+    this.ui?.send("captions:speech-status", this.speechStatus)
+    this.showTextWall(hint)
+  }
+
+  private clearSpeechStatus(): void {
+    if (!this.speechStatus) return
+    this.speechStatus = null
+    this.ui?.send("captions:speech-status", null)
   }
 
   private subscribeCloudStatus(): void {
@@ -487,6 +572,13 @@ export class CaptionsController {
   // ───────────────────────────────────────────────────────────────────────
 
   private async handleTranscription(data: TranscriptionData): Promise<void> {
+    // Speech is flowing: disarm the watchdog and clear any no-model hint.
+    if (this.speechWatchdog) {
+      clearTimeout(this.speechWatchdog)
+      this.speechWatchdog = null
+    }
+    this.clearSpeechStatus()
+
     const controllerReceivedAt = Date.now()
     const hostReceivedAt = (data as {__hostReceivedAt?: number}).__hostReceivedAt
     if (TRANSCRIPT_TIMING_TELEMETRY) {
@@ -498,7 +590,7 @@ export class CaptionsController {
     }
     // On-device TranscriptionData has only {text, isFinal, language?}. There is
     // no utteranceId/speakerId, so we take the legacy interim/final path and
-    // attribute every utterance to Speaker 1.
+    // show no speaker label (no on-device diarizer on this stack).
     const utteranceId: string | null = (data as {utteranceId?: string}).utteranceId ?? null
     const speakerId: string | undefined = (data as {speakerId?: string}).speakerId
 
@@ -532,14 +624,8 @@ export class CaptionsController {
       timestamp: entry.timestamp,
     })
 
-    // 3. Process text for the glasses display (pinyin conversion if configured).
-    let displayText = data.text
-    if (this.settings.language === "Chinese (Pinyin)") {
-      displayText = convertToPinyin(displayText)
-    }
-
-    // 4. Render on glasses.
-    this.processAndDisplay(displayText, data.isFinal, speakerId)
+    // 3. Render on glasses.
+    this.processAndDisplay(data.text, data.isFinal, speakerId)
   }
 
   private createEntry(
@@ -560,7 +646,9 @@ export class CaptionsController {
   }
 
   private formatSpeakerId(speakerId: string | undefined): string {
-    if (!speakerId) return "Speaker 1"
+    // No on-device diarizer: an absent speakerId stays unlabeled rather than
+    // showing a fake "Speaker 1" on every utterance.
+    if (!speakerId) return ""
     return `Speaker ${speakerId}`
   }
 

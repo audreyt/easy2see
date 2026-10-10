@@ -42,7 +42,14 @@ export function App() {
       <div className="min-h-0 flex-1 bg-zinc-100 dark:bg-zinc-950 flex flex-col overflow-hidden">
         <Header connected={tp.connected} />
 
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden relative">
+          {tp.recording?.state === "error" && (
+            <div className="absolute top-0 inset-x-0 z-10 px-4 pt-2">
+              <p className="text-xs text-white bg-red-600/90 rounded-xl px-3 py-2 shadow">
+                {tp.recording.message ?? "Recording could not be saved"}
+              </p>
+            </div>
+          )}
           {!tp.settings ? (
             <div className="flex items-center justify-center h-full">
               <p className="text-zinc-400 dark:text-zinc-500 text-sm">Loading…</p>
@@ -55,6 +62,7 @@ export function App() {
               onSetWidth={tp.setWidth}
               onSetAutoRestart={tp.setAutoRestart}
               onSetShowTimecode={tp.setShowTimecode}
+              onSetSaveRecording={tp.setSaveRecording}
             />
           ) : (
             <ScriptView

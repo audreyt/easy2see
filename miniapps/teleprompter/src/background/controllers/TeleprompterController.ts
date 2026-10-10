@@ -23,6 +23,8 @@
 
 import type {MiniappSession, TranscriptionData, UnsubscribeFn, RenderElement} from "@mentra/miniapp/background"
 
+import {fileStamp, mmss, SessionRecorder, type RecordingFileNames} from "../recording/SessionRecorder"
+
 import {ScriptEngine, normalizeWords} from "../core/ScriptEngine"
 import {hasDisplayCapability, hasMicrophoneCapability} from "../core/Capabilities"
 import type {Channels} from "../../shared/channels"
@@ -36,7 +38,7 @@ const DEFAULT_SCRIPT = [
   "",
   "Paste or type your script here, put on your glasses, and press play. The words scroll by on their own at the speed you set, line by line.",
   "",
-  "Want it to keep pace with you instead? Turn on AI Scroll and the prompter listens — it advances as you speak, and waits when you pause.",
+  "Want it to keep pace with you instead? Turn on AI Scroll and the prompter listens on-device — it advances as you speak, and waits when you pause.",
   "",
   "That's it. Look up, speak naturally, and never lose your place.",
 ].join("\n")
@@ -52,6 +54,7 @@ const DEFAULT_SETTINGS: TeleprompterSettings = {
   voiceFollow: false,
   autoRestart: false,
   showTimecode: false,
+  saveRecording: false,
 }
 
 const STORAGE_KEYS = {
@@ -62,7 +65,13 @@ const STORAGE_KEYS = {
   voiceFollow: "voiceFollow",
   autoRestart: "autoRestart",
   showTimecode: "showTimecode",
+  saveRecording: "saveRecording",
+  recordingSeq: "recordingSeq",
 } as const
+
+/** Folder under the app's Documents dir recordings are exported into. */
+const RECORDING_EXPORT_FOLDER = "Recordings/Teleprompter"
+const RECORDING_APP_NAME = "Teleprompter"
 
 const WPM_MIN = 30
 const WPM_MAX = 400
@@ -71,6 +80,36 @@ const TICK_MS = 350
 const PROBE_WORDS = 6
 /** Rolling cap on remembered spoken words. */
 const SPOKEN_HISTORY = 16
+
+/**
+ * How long voice-follow waits for the FIRST usable transcript before giving
+ * up on the on-device STT pipeline and falling back to timed scroll.
+ *
+ * Why this exists: `transcription.on` is fire-and-forget — the host can
+ * reject the subscription (e.g. on-device speech disabled by deployment) or
+ * accept it but produce nothing (no downloaded Sherpa model), and neither
+ * failure reaches the miniapp. Without a watchdog the script just freezes.
+ *
+ * Why 15s: the window now measures "the user has said nothing usable" as
+ * much as "the pipeline is dead" — a presenter who taps Play then settles
+ * the glasses or greets the room must not be walked off the script. The
+ * fallback is recoverable (the subscription stays live and a late
+ * transcript re-anchors the cursor), so a false trip only costs a few
+ * seconds of timed drift that speech corrects; a real dead pipeline costs
+ * at most 15s of stillness before timed scroll takes over.
+ */
+const VOICE_STALL_MS = 15000
+
+/**
+ * Preserve blank viewport rows without emitting consecutive newlines. Even
+ * Realities G2 shuts down its EvenHub page when a text container contains an
+ * interior empty line (`\n\n`), leaving the display blank until that row
+ * scrolls away. A zero-width space survives the host's line trimming and
+ * renders as the same blank row without tripping the firmware parser.
+ */
+export function serializeDisplayLines(lines: string[]): string {
+  return lines.map((line) => (line === "" ? "\u200B" : line)).join("\n")
+}
 
 export class TeleprompterController {
   private started = false
@@ -96,14 +135,38 @@ export class TeleprompterController {
   // WPM timer
   private timer: ReturnType<typeof setInterval> | null = null
   private timerStartMs = 0
-  private timerStartWord = 0
+  /** Pacing weight (not raw token index) the timer started from. */
+  private timerStartWeight = 0
 
   // Voice-follow
   private transcriptionCleanup: UnsubscribeFn | null = null
   private voiceActive = false
   private recentSpoken: string[] = []
+  /** Why voice-follow is not the active driver; null when it is (or is off). */
+  private voiceFallback: "no-mic" | "no-speech" | null = null
+  /**
+   * Watchdog: no usable transcript within VOICE_STALL_MS of arming → timed
+   * scroll. Re-armed by every startVoiceFollow() (play, resume, restart,
+   * toggle-on, mic-capability change), cleared by the first usable
+   * transcript — silence mid-read must not drop us to timed scroll.
+   */
+  private voiceWatchdog: ReturnType<typeof setTimeout> | null = null
 
-  constructor(private readonly session: MiniappSession) {}
+  // ── Session recording (opt-in; audio + transcript to Files on session end) ──
+  private readonly recorder: SessionRecorder
+  private recordingSeq = 0
+  private recordingStartedAt = 0
+
+  constructor(
+    private readonly session: MiniappSession,
+    /** Test seam: override the voice-stall watchdog window. */
+    private readonly voiceStallMs: number = VOICE_STALL_MS,
+  ) {
+    // Field initializers run before the `session` param property is assigned
+    // under Bun's emit — build the recorder here, not inline above.
+    this.recorder = new SessionRecorder(session, RECORDING_EXPORT_FOLDER)
+  }
+
 
   // ───────────────────────────────────────────────────────────────────────
   // Lifecycle
@@ -180,7 +243,6 @@ export class TeleprompterController {
 
     this.registerUiHandlers()
     this.registerActions()
-
     // Show the opening lines as a ready-to-read preview on the glasses.
     this.render()
     this.broadcastStatus()
@@ -192,6 +254,7 @@ export class TeleprompterController {
     this.renderResult = Promise.resolve(null)
     this.clearTimer()
     this.unsubscribeTranscription()
+    void this.endRecording("session ended")
     for (const u of this.unsubs) {
       try {
         u()
@@ -218,6 +281,7 @@ export class TeleprompterController {
     this.unsubs.push(this.ui.on("tp:set-voice-follow", ({enabled}) => void this.setVoiceFollow(enabled)))
     this.unsubs.push(this.ui.on("tp:set-auto-restart", ({enabled}) => void this.setAutoRestart(enabled)))
     this.unsubs.push(this.ui.on("tp:set-show-timecode", ({enabled}) => void this.setShowTimecode(enabled)))
+    this.unsubs.push(this.ui.on("tp:set-save-recording", ({enabled}) => void this.setSaveRecording(enabled)))
 
     this.unsubs.push(this.ui.on("tp:play", () => this.play()))
     this.unsubs.push(this.ui.on("tp:pause", () => this.pause()))
@@ -315,6 +379,7 @@ export class TeleprompterController {
     }
     this.state = "playing"
     this.recentSpoken = []
+    this.syncRecording()
 
     if (this.settings.voiceFollow) {
       this.clearTimer()
@@ -340,11 +405,23 @@ export class TeleprompterController {
     this.manualTopLine = null
     this.cursor = 0
     this.recentSpoken = []
+    // A restart is a new read — close the current recording session first;
+    // if we're still playing, a fresh one begins immediately below.
+    void this.endRecording("restarted")
     if (this.state === "finished") this.state = "paused"
     if (this.state === "playing" && !this.voiceActive) {
-      this.timerStartWord = 0
-      this.timerStartMs = this.now()
+      if (this.settings.voiceFollow && this.hasMic && this.transcriptionCleanup === null) {
+        // Voice-follow wanted but no live subscription (a subscribe that threw,
+        // or one torn down by an earlier stall on an older build). A restart is
+        // a fresh read — retry the subscription, which re-arms the watchdog.
+        this.clearTimer()
+        this.startVoiceFollow()
+      } else {
+        this.timerStartWeight = this.engine.weightBefore(this.cursor)
+        this.timerStartMs = this.now()
+      }
     }
+    if (this.state === "playing") this.syncRecording()
     this.render()
     this.broadcastStatus()
   }
@@ -373,7 +450,7 @@ export class TeleprompterController {
     }
     if (this.state === "finished" && this.cursor < this.engine.totalWords) this.state = "paused"
     if (this.state === "playing" && !this.voiceActive) {
-      this.timerStartWord = this.cursor
+      this.timerStartWeight = this.engine.weightBefore(this.cursor)
       this.timerStartMs = this.now()
     }
     this.render()
@@ -386,7 +463,7 @@ export class TeleprompterController {
 
   private startTimer(): void {
     this.voiceActive = false
-    this.timerStartWord = this.cursor
+    this.timerStartWeight = this.engine.weightBefore(this.cursor)
     this.timerStartMs = this.now()
     this.clearTimer()
     this.timer = setInterval(() => this.onTick(), TICK_MS)
@@ -403,7 +480,7 @@ export class TeleprompterController {
     if (this.state !== "playing" || this.voiceActive) return
     const elapsedSec = (this.now() - this.timerStartMs) / 1000
     const advanced = Math.floor((elapsedSec * this.settings.wpm) / 60)
-    const next = Math.min(this.timerStartWord + advanced, this.engine.totalWords)
+    const next = Math.min(this.engine.wordForWeight(this.timerStartWeight + advanced), this.engine.totalWords)
     if (next !== this.cursor) {
       this.manualTopLine = null
       this.cursor = next
@@ -428,21 +505,71 @@ export class TeleprompterController {
     // when there's nothing to listen with, rather than silently stalling.
     if (!this.hasMic) {
       console.log("Teleprompter: no microphone on device, using timed scroll")
-      this.voiceActive = false
+      this.voiceFallback = "no-mic"
       this.startTimer()
       return
     }
     try {
-      this.transcriptionCleanup = this.session.transcription.on((data) => this.handleTranscription(data))
+      // forceLocal: serve this stream from the on-device Sherpa STT only.
+      // The host drops cloud transcripts for this subscriber and never uplinks
+      // audio for it — the phone and the glasses, nothing else. There is NO
+      // cloud fallback here by design: if on-device speech can't produce text,
+      // we degrade to timed scrolling, never to the cloud.
+      this.transcriptionCleanup = this.session.transcription.on((data) => this.handleTranscription(data), {
+        forceLocal: true,
+      })
       this.voiceActive = true
+      this.voiceFallback = null
+      this.armVoiceWatchdog()
     } catch (err) {
       console.log("Teleprompter: voice-follow subscribe failed, using timed scroll", err)
-      this.voiceActive = false
+      this.voiceFallback = "no-speech"
       this.startTimer()
     }
   }
 
+  /**
+   * The subscribe call above is fire-and-forget: the host can reject it
+   * (on-device speech disabled by deployment) or accept it but produce
+   * nothing (no downloaded Sherpa model), and NEITHER failure reaches this
+   * JSContext — no throw, no event. The only observable signal is whether
+   * usable transcripts actually arrive, so arm a watchdog: if none do within
+   * the window, drop to the timed driver instead of freezing. Every
+   * startVoiceFollow() re-arms it; the first usable transcript disarms it.
+   */
+  private armVoiceWatchdog(): void {
+    this.clearVoiceWatchdog()
+    this.voiceWatchdog = setTimeout(() => this.onVoiceStall(), this.voiceStallMs)
+  }
+
+  private clearVoiceWatchdog(): void {
+    if (this.voiceWatchdog) {
+      clearTimeout(this.voiceWatchdog)
+      this.voiceWatchdog = null
+    }
+  }
+
+  /**
+   * Watchdog fired: voice-follow is armed but the on-device pipeline produced
+   * no usable transcript in time. Fall back to timed scroll — the ONLY
+   * permitted degradation — and mark the status so the UI can say why.
+   *
+   * The subscription stays ALIVE: the stall may mean "pipeline dead" or just
+   * "nobody has spoken yet", and we can't tell which. If a transcript does
+   * arrive later, handleTranscription restores voice-follow and re-anchors
+   * the cursor to the spoken position, undoing whatever the timer drifted.
+   */
+  private onVoiceStall(): void {
+    this.voiceWatchdog = null
+    if (this.state !== "playing" || !this.voiceActive) return
+    console.log("Teleprompter: no on-device transcript within stall window, using timed scroll")
+    this.voiceFallback = "no-speech"
+    this.startTimer()
+    this.broadcastStatus()
+  }
+
   private unsubscribeTranscription(): void {
+    this.clearVoiceWatchdog()
     if (this.transcriptionCleanup) {
       try {
         this.transcriptionCleanup()
@@ -452,12 +579,36 @@ export class TeleprompterController {
       this.transcriptionCleanup = null
     }
     this.voiceActive = false
+    this.voiceFallback = null
   }
 
   private handleTranscription(data: TranscriptionData): void {
-    if (this.state !== "playing" || !this.voiceActive) return
+    // Gate on the live subscription, not voiceActive: after a stall the
+    // subscription stays up while the timed driver runs, and a transcript
+    // arriving then is exactly the recovery signal we kept it for.
+    if (this.state !== "playing" || this.transcriptionCleanup === null) return
     const spoken = normalizeWords(data.text || "")
+    if (data.isFinal && spoken.length > 0) {
+      // Transcript: timestamped recognized speech, finals only.
+      const lang = (data as {language?: string}).language
+      this.recorder.noteLine(`[${mmss(this.recorder.elapsedMs())}]${lang ? ` (${lang})` : ""} ${data.text}`)
+    }
     if (spoken.length === 0) return
+    // First usable transcript proves the on-device pipeline is alive — the
+    // watchdog's job is done. It does NOT re-arm: voice-follow waits when the
+    // speaker pauses, and silence mid-read must not drop us to timed scroll.
+    this.clearVoiceWatchdog()
+
+    // Recovering from a stall: the timed driver may have drifted the cursor
+    // ahead of the speaker. Take the mic back and let matchSpoken pull the
+    // cursor back to the spoken position — the drift was never real reading.
+    const recovering = !this.voiceActive
+    if (recovering) {
+      this.clearTimer()
+      this.voiceActive = true
+      this.voiceFallback = null
+      this.recentSpoken = []
+    }
 
     let probe: string[]
     if (data.isFinal) {
@@ -470,8 +621,9 @@ export class TeleprompterController {
       probe = [...this.recentSpoken, ...spoken].slice(-PROBE_WORDS)
     }
 
-    const next = this.engine.matchSpoken(probe, this.cursor)
-    if (next !== this.cursor) {
+    const next = this.engine.matchSpoken(probe, this.cursor, recovering)
+    const moved = next !== this.cursor
+    if (moved) {
       this.manualTopLine = null
       this.cursor = next
       if (this.cursor >= this.engine.totalWords) {
@@ -479,8 +631,9 @@ export class TeleprompterController {
         return
       }
       this.render()
-      this.broadcastStatus()
     }
+    // Recovery flips voiceMode/voiceFallback even when the anchor didn't move.
+    if (recovering || moved) this.broadcastStatus()
   }
 
   private handleEnd(): void {
@@ -489,7 +642,7 @@ export class TeleprompterController {
       this.cursor = 0
       this.recentSpoken = []
       if (!this.voiceActive) {
-        this.timerStartWord = 0
+        this.timerStartWeight = 0
         this.timerStartMs = this.now()
       }
       this.render()
@@ -499,6 +652,7 @@ export class TeleprompterController {
     this.state = "finished"
     this.clearTimer()
     this.unsubscribeTranscription()
+    void this.endRecording("finished")
     this.render()
     this.broadcastStatus()
   }
@@ -509,7 +663,7 @@ export class TeleprompterController {
 
   private async loadSettings(): Promise<void> {
     try {
-      const [script, wpm, lines, width, voice, replay, timecode] = await Promise.all([
+      const [script, wpm, lines, width, voice, replay, timecode, saveRec, recSeq] = await Promise.all([
         this.session.storage.get(STORAGE_KEYS.script),
         this.session.storage.get(STORAGE_KEYS.wpm),
         this.session.storage.get(STORAGE_KEYS.numberOfLines),
@@ -517,6 +671,8 @@ export class TeleprompterController {
         this.session.storage.get(STORAGE_KEYS.voiceFollow),
         this.session.storage.get(STORAGE_KEYS.autoRestart),
         this.session.storage.get(STORAGE_KEYS.showTimecode),
+        this.session.storage.get(STORAGE_KEYS.saveRecording),
+        this.session.storage.get(STORAGE_KEYS.recordingSeq),
       ])
 
       this.settings = {
@@ -527,7 +683,9 @@ export class TeleprompterController {
         voiceFollow: voice == null ? DEFAULT_SETTINGS.voiceFollow : voice === "true",
         autoRestart: replay == null ? DEFAULT_SETTINGS.autoRestart : replay === "true",
         showTimecode: timecode == null ? DEFAULT_SETTINGS.showTimecode : timecode === "true",
+        saveRecording: saveRec === "true",
       }
+      this.recordingSeq = Math.max(0, this.parseIntOr(recSeq, 0))
     } catch (err) {
       console.log("Teleprompter: failed to load settings, using defaults", err)
       this.settings = {...DEFAULT_SETTINGS}
@@ -559,7 +717,7 @@ export class TeleprompterController {
     await this.persist(STORAGE_KEYS.wpm, String(this.settings.wpm))
     // Apply the new speed from the current position without a jump.
     if (this.state === "playing" && !this.voiceActive) {
-      this.timerStartWord = this.cursor
+      this.timerStartWeight = this.engine.weightBefore(this.cursor)
       this.timerStartMs = this.now()
     }
     if (this.settings.showTimecode) this.render()
@@ -628,6 +786,107 @@ export class TeleprompterController {
     } catch (err) {
       console.log(`Teleprompter: failed to persist ${key}`, err)
     }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Session recording (opt-in)
+  // ───────────────────────────────────────────────────────────────────────
+
+  private async setSaveRecording(enabled: boolean): Promise<void> {
+    if (enabled === this.settings.saveRecording) return
+    this.settings.saveRecording = enabled
+    await this.persist(STORAGE_KEYS.saveRecording, String(enabled))
+    if (!enabled && this.recorder.active) {
+      // Turning the setting off mid-read discards the in-progress capture —
+      // the user's intent is clearly "do not save this".
+      await this.recorder.abort()
+      this.notifyRecording("idle")
+    } else if (enabled && this.state === "playing") {
+      this.syncRecording()
+    }
+    this.broadcastSettings()
+  }
+
+  /**
+   * A recording session covers one read: Play → finished/stopped/restarted.
+   * It begins only when playback actually starts (never while paused — a
+   * paused read resumes into its existing session), and the mic subscription
+   * exists only inside that window: raw audio_chunk forces device-wide PCM
+   * mode, so it must never leak outside an active read.
+   */
+  private syncRecording(): void {
+    if (this.recorder.active || !this.settings.saveRecording || !this.hasMic) return
+    this.recordingSeq += 1
+    void this.persist(STORAGE_KEYS.recordingSeq, String(this.recordingSeq))
+    this.recordingStartedAt = Date.now()
+    const base = `${fileStamp(new Date(this.recordingStartedAt))} ${RECORDING_APP_NAME} ${this.recordingSeq}`
+    const names: RecordingFileNames = {wav: `${base}.wav`, md: `${base}.md`}
+    this.recorder
+      .begin(names, this.transcriptHeader())
+      .then(() => this.notifyRecording("recording"))
+      .catch((err) => {
+        console.log("Teleprompter: recording could not start", err)
+        this.notifyRecording("error", `Recording could not start: ${err instanceof Error ? err.message : String(err)}`)
+      })
+  }
+
+  private async endRecording(reason: string): Promise<void> {
+    if (!this.recorder.active) return
+    const result = await this.recorder.finish(this.transcriptFooter(reason))
+    if (result.errors.length > 0) {
+      this.notifyRecording("error", result.errors.join(" · "))
+    } else if (result.exported.length > 0) {
+      this.notifyRecording("saved", `Saved ${result.exported.length} files to Files › ${RECORDING_EXPORT_FOLDER}`)
+    } else {
+      this.notifyRecording("idle")
+    }
+  }
+
+  private notifyRecording(state: "idle" | "recording" | "saved" | "error", message?: string): void {
+    try {
+      this.ui.send("tp:recording", {state, message})
+    } catch {
+      /* UI bus unavailable (e.g. mid-disconnect) — the log line still lands */
+      if (state === "error") console.log(`Teleprompter: recording error: ${message}`)
+    }
+  }
+
+  /** First non-empty script line, trimmed — the transcript's "Script" label. */
+  private scriptTitle(): string {
+    const line = this.settings.script.split("\n").find((l) => l.trim().length > 0) ?? ""
+    const t = line.trim()
+    return t.length > 60 ? `${t.slice(0, 60)}…` : t || "(untitled script)"
+  }
+
+  private transcriptHeader(): string {
+    const started = new Date(this.recordingStartedAt)
+    return [
+      `# ${RECORDING_APP_NAME} session recording`,
+      "",
+      `- App: ${RECORDING_APP_NAME}`,
+      `- Started: ${started.toLocaleString()}`,
+      `- Script: ${this.scriptTitle()}`,
+      "",
+      "## Transcript",
+      "",
+    ].join("\n")
+  }
+
+  private transcriptFooter(reason: string): string {
+    const ended = new Date()
+    const durationMs = Math.max(0, ended.getTime() - this.recordingStartedAt)
+    return [
+      "",
+      "## Session",
+      "",
+      `- Ended: ${ended.toLocaleString()} (${reason})`,
+      `- Duration: ${mmss(durationMs)}`,
+      "",
+      "## Script",
+      "",
+      this.settings.script,
+      "",
+    ].join("\n")
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -741,8 +1000,8 @@ export class TeleprompterController {
   }
 
   private timecodeLine(): string {
-    const total = this.engine.totalWords
-    const posSec = total > 0 ? (this.cursor / this.settings.wpm) * 60 : 0
+    const total = this.engine.totalWeight
+    const posSec = total > 0 ? (this.engine.weightBefore(this.cursor) / this.settings.wpm) * 60 : 0
     const totalSec = (total / this.settings.wpm) * 60
     return `${fmtClock(posSec)} / ${fmtClock(totalSec)}`
   }
@@ -752,22 +1011,29 @@ export class TeleprompterController {
   // ───────────────────────────────────────────────────────────────────────
 
   private buildStatus(): PlaybackStatus {
-    const total = this.engine.totalWords
-    const remainingWords = Math.max(0, total - this.cursor)
+    const total = this.engine.totalWeight
+    const remainingWeight = Math.max(0, total - this.engine.weightBefore(this.cursor))
     return {
       state: this.state,
       // Reflect the ACTIVE driver: while playing this is whether the voice
-      // subscription actually attached (false after a no-mic fallback); when
-      // idle/paused it's whether this device could voice-follow at all.
+      // subscription actually attached (false after a no-mic or stalled
+      // fallback); when idle/paused it's whether this device could
+      // voice-follow at all.
       voiceMode: this.state === "playing" ? this.voiceActive : this.settings.voiceFollow && this.hasMic,
+      // Why voice-follow isn't driving: "no-mic" (device has no microphone),
+      // "no-speech" (no usable transcript yet — dead pipeline OR a presenter
+      // who hasn't spoken; recoverable when speech arrives), null while
+      // voice is the live driver or the feature is off. Lets the UI say WHY
+      // instead of silently timed-scrolling.
+      voiceFallback: this.state === "playing" ? this.voiceFallback : this.hasMic ? null : "no-mic",
       wordIndex: this.cursor,
-      totalWords: total,
+      totalWords: this.engine.totalWords,
       topLine: this.currentTopLine,
       totalLines: this.engine.totalLines,
       visibleLines: [...this.currentVisible],
       progress: this.engine.progressForWord(this.cursor),
       estimatedTotalSec: (total / this.settings.wpm) * 60,
-      remainingSec: (remainingWords / this.settings.wpm) * 60,
+      remainingSec: (remainingWeight / this.settings.wpm) * 60,
       hasDisplay: this.hasDisplay,
     }
   }
@@ -783,6 +1049,7 @@ export class TeleprompterController {
     this.recentSpoken = []
     this.clearTimer()
     this.unsubscribeTranscription()
+    void this.endRecording("stopped")
   }
 
   private now(): number {

@@ -91,9 +91,11 @@ export function ScriptView({
   const totalWords = status?.totalWords ?? 0
   const playing = status?.state === "playing"
   // Whether voice is the ACTUAL scroll driver — false when AI Scroll is on but
-  // the device has no mic (the engine falls back to timed scroll), so the
-  // caption doesn't promise voice-follow that isn't happening.
+  // the device has no mic or the on-device speech pipeline produced nothing
+  // (the engine falls back to timed scroll), so the caption doesn't promise
+  // voice-follow that isn't happening.
   const voiceActive = status?.voiceMode ?? settings.voiceFollow
+  const voiceFallback = status?.voiceFallback ?? null
   const progress = drag ?? status?.progress ?? 0
   const totalSec = status?.estimatedTotalSec ?? 0
   const remainingSec = status?.remainingSec ?? totalSec
@@ -174,13 +176,17 @@ export function ScriptView({
         </div>
 
         {/* What Play does right now — defuses the "why isn't it moving?" confusion.
-            Three states: off, on-with-voice, and on-but-no-mic (timed fallback). */}
+            Four states: off, on-with-voice, on-but-no-mic, and on-but-stalled
+            (no transcript yet — pipeline dead OR nobody speaking — so timed
+            scroll runs until speech arrives and re-anchors the cursor). */}
         <p className="text-center text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
           {!settings.voiceFollow
             ? `Play auto-scrolls at ${settings.wpm} wpm. Turn on AI Scroll to follow your voice.`
             : voiceActive
-              ? "AI Scroll is on — the prompter follows your voice as you speak."
-              : `AI Scroll is on, but this device has no mic — Play auto-scrolls at ${settings.wpm} wpm.`}
+              ? "AI Scroll is on — the prompter follows your voice, recognized on this device."
+              : voiceFallback === "no-mic"
+                ? `AI Scroll is on, but this device has no mic — Play auto-scrolls at ${settings.wpm} wpm.`
+                : `AI Scroll hasn't picked up speech yet — auto-scrolling at ${settings.wpm} wpm until it does.`}
         </p>
 
         {/* Scrubber */}

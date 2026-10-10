@@ -29,7 +29,6 @@ export function App() {
     canPosition,
     updateLanguage,
     updateHints,
-    updateUseOfflineStt,
     updateDisplayLines,
     updateDisplayWidth,
     updateCaptionPosition,
@@ -39,13 +38,13 @@ export function App() {
   const {
     transcripts,
     connected,
-    error,
     isRecording,
     toggleRecording,
     clearTranscripts,
-    reconnect,
+    retrySpeech,
     displayPreview,
     cloudStatus,
+    speechStatus,
   } = useTranscripts()
 
   const handleSaveLanguage = async (language: string, hints: string[]) => {
@@ -84,12 +83,12 @@ export function App() {
           connected={connected}
           accentColor={presentation.accentColor}
           accentForeground={presentation.accentForeground}
-          error={error}
+          error={speechStatus?.hint ?? null}
           settings={settings}
           onUpdateLanguage={updateLanguage}
           onUpdateHints={updateHints}
           onToggleLanguageSelector={() => setShowLanguageSelector(true)}
-          onReconnect={reconnect}
+          onReconnect={retrySpeech}
           isLanguageSelectorOpen={showLanguageSelector}
         />
 
@@ -111,7 +110,6 @@ export function App() {
               displayPreview={displayPreview}
               accentColor={presentation.accentColor}
               accentForeground={presentation.accentForeground}
-              onUpdateUseOfflineStt={updateUseOfflineStt}
               onUpdateDisplayLines={updateDisplayLines}
               onUpdateDisplayWidth={updateDisplayWidth}
               onUpdateCaptionPosition={updateCaptionPosition}

@@ -27,6 +27,17 @@ export interface TeleprompterSettings {
   autoRestart: boolean
   /** When true, append a time/progress footer line to the glasses display. */
   showTimecode: boolean
+  /**
+   * When true, each read (Play → finished/stopped) saves the session's
+   * microphone audio + a timestamped transcript into Files › Recordings.
+   */
+  saveRecording: boolean
+}
+
+/** Recording lifecycle notice pushed to the UI (recording / saved / error). */
+export interface RecordingNotice {
+  state: "idle" | "recording" | "saved" | "error"
+  message?: string
 }
 
 /** Playback lifecycle state. */
@@ -38,8 +49,17 @@ export type PlaybackState = "idle" | "playing" | "paused" | "finished"
  */
 export interface PlaybackStatus {
   state: PlaybackState
-  /** True when voice-follow is the active scroll driver (voiceFollow && mic ok). */
+  /** True when voice-follow is the active scroll driver (voiceFollow && mic ok && on-device STT producing). */
   voiceMode: boolean
+  /**
+   * Why voice-follow is NOT the active driver while it's enabled:
+   * "no-mic" — the device has no microphone; "no-speech" — no usable
+   * transcript has arrived yet (the on-device pipeline may be dead, or the
+   * presenter may simply not have spoken — the miniapp can't tell which).
+   * Recoverable: a late transcript restores voice-follow and clears this.
+   * Null while voice-follow is live or disabled.
+   */
+  voiceFallback: "no-mic" | "no-speech" | null
   /** Index of the next word expected to be read (0-based into the word list). */
   wordIndex: number
   /** Total readable words in the script. */

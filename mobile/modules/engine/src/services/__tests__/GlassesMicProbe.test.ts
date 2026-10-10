@@ -4,7 +4,7 @@ import {afterAll, afterEach, beforeEach, describe, expect, mock, test} from "bun
 
 import {reactNative} from "./reactNativeTestMock"
 
-reactNative.Platform = {OS: "android"}
+Object.assign(reactNative.Platform as object, {OS: "android"})
 reactNative.Alert = {alert: () => {}}
 
 import {bluetoothSdk} from "./bluetoothSdkTestMock"

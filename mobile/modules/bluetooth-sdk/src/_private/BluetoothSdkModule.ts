@@ -60,6 +60,7 @@ import {
   WifiSearchResult,
   WifiStatusChangeEvent,
 } from "../BluetoothSdk.types"
+import type {LlmAvailabilityResult, LlmGenerateNativeRequest, LlmGenerateNativeResult} from "../BluetoothSdk.types"
 import {warmUpCameraParamsForNative} from "./cameraRequestPayload"
 import {photoRequestParamsForNative} from "./photoRequestPayload"
 import {streamRequestParamsForNative} from "./streamRequestPayload"
@@ -256,6 +257,48 @@ declare class BluetoothSdkNativeModule extends NativeModule<BluetoothSdkModuleEv
    */
   setMicSourcePin(source: string | null): Promise<void>
   restartTranscriber(): Promise<void>
+  /**
+   * Toggle the on-device Apple Speech + Translation pipeline (the Easy2Say
+   * stack). When `active` is true the native side feeds glasses PCM into
+   * SFSpeechRecognizer lanes and emits `local_translation` events translated
+   * into each requested pair's `target`. `pairs` is ignored when `active` is
+   * false. `probeReason` carries the probeLocalTranslation verdict reason so
+   * a late failure (prepare/translate throw, session timeout) can report why
+   * the hop was expected to work. iOS only; Android is a logged no-op.
+   */
+  setLocalTranslation(
+    active: boolean,
+    pairs: {source: string; target: string}[],
+    probeReason?: string | null,
+  ): Promise<void>
+
+  /**
+   * Probe whether the on-device translation hop can serve `pairs` right now:
+   * iOS 18+, speech authorization, an on-device recognizer lane, and a
+   * LanguageAvailability verdict for the target. `available` true with
+   * reason "needs-download" means the pair is supported but its models are
+   * not installed — the pipeline starts Apple Translation so the system can
+   * fetch them. iOS only; Android resolves {available: false,
+   * reason: "android-out-of-scope"}.
+   */
+  probeLocalTranslation(pairs: {source: string; target: string}[]): Promise<{available: boolean; reason: string}>
+
+  /**
+   * Toggle the transcribe-only Apple Speech pipeline (Contract A). `locales`
+   * are BCP-47 wire tags ("auto"/"*" expands to preferred languages);
+   * ignored when `active` is false. Emits `local_transcription` events with
+   * `provider: "apple-speech"`. iOS only; Android is a logged no-op.
+   */
+  setLocalTranscription(active: boolean, locales: string[]): Promise<void>
+
+  /**
+   * Whether the transcribe-only hop can serve `locales` right now — speech
+   * authorization plus an on-device recognizer lane. The engine's
+   * LocalTranscriptionCoordinator probes before resolving a forceLocal
+   * subscription to the Apple engine. iOS only; Android resolves
+   * {available: false, reason: "android-out-of-scope"}.
+   */
+  probeLocalTranscription(locales: string[]): Promise<{available: boolean; reason: string}>
 
   // Audio Playback Monitoring
   // Notify native side when our app starts/stops playing audio
@@ -342,6 +385,14 @@ declare class BluetoothSdkNativeModule extends NativeModule<BluetoothSdkModuleEv
 
   // Process resident-set-size in MB. iOS-only; Android stub returns 0.
   getMemoryMB(): number
+
+  // On-device language model (session.llm) — Apple Foundation Models, iOS 26+.
+  // Android resolves unsupported-os envelopes. Errors ride inside the result
+  // envelope (never thrown) so the host maps codes deterministically.
+  llmAvailability(): Promise<LlmAvailabilityResult>
+  llmPrewarm(): Promise<void>
+  llmGenerate(request: LlmGenerateNativeRequest): Promise<LlmGenerateNativeResult>
+  llmCancel(requestId: string): Promise<void>
 }
 
 export type BluetoothSdkInternalModule = BluetoothSdkNativeModule

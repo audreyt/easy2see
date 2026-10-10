@@ -7,7 +7,7 @@ import {usePushPrevious} from "@/contexts/NavigationHistoryContext"
 import {useAppTheme} from "@/contexts/ThemeContext"
 import {useNavigationStore} from "@/stores/navigation"
 import WifiCredentialsService from "@/utils/wifi/WifiCredentialsService"
-import {MentraLogoStandalone} from "@/components/brands/MentraLogoStandalone"
+import {AppMark} from "@/components/brands/AppMark"
 import {translate, type TxKeyPath} from "@/i18n"
 
 type WifiConnectionErrorCopy = {
@@ -189,11 +189,7 @@ export default function WifiConnectingScreen() {
       {connectionStatus === "success" ? (
         <Header />
       ) : (
-        <Header
-          leftIcon="chevron-left"
-          onLeftPress={handleHeaderBack}
-          RightActionComponent={<MentraLogoStandalone />}
-        />
+        <Header leftIcon="chevron-left" onLeftPress={handleHeaderBack} RightActionComponent={<AppMark />} />
       )}
       {renderContent()}
     </Screen>

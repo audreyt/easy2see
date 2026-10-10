@@ -1,4 +1,4 @@
-import {MentraLogoStandalone} from "@/components/brands/MentraLogoStandalone"
+import {AppMark} from "@/components/brands/AppMark"
 // import {useVideoPlayer, VideoView} from "expo-video"
 import {View} from "react-native"
 
@@ -18,7 +18,7 @@ export function SplashVideo({label}: {label?: string}) {
     <View className="flex-1 justify-center items-center bg-background">
       {/* Keep the logo perfectly centered; the label is absolutely positioned
           below it so showing/hiding the text never shifts the logo. */}
-      <MentraLogoStandalone width={100} height={53} />
+      <AppMark width={100} height={53} />
       {/* <VideoView player={player} style={{width: "50%", height: "50%"}} contentFit="contain" nativeControls={false} /> */}
       {label ? (
         <Text

@@ -70,11 +70,6 @@ export function useSettings() {
     return true
   }
 
-  const updateUseOfflineStt = async (enabled: boolean): Promise<boolean> => {
-    setSettings((prev) => (prev ? {...prev, useOfflineStt: enabled} : prev))
-    mentra.send("captions:set-use-offline-stt", {enabled})
-    return true
-  }
 
   const updateDisplayLines = async (lines: number): Promise<boolean> => {
     setSettings((prev) => (prev ? {...prev, displayLines: lines} : prev))
@@ -113,7 +108,6 @@ export function useSettings() {
     error: null as string | null,
     updateLanguage,
     updateHints,
-    updateUseOfflineStt,
     updateDisplayLines,
     updateDisplayWidth,
     updateCaptionPosition,

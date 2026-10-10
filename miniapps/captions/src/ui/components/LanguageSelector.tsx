@@ -2,7 +2,7 @@ import {Search, X, Check} from "lucide-react"
 import type {CSSProperties} from "react"
 import {useState, useEffect} from "react"
 
-import {AVAILABLE_LANGUAGES, getLanguageName, getFlagEmoji} from "../lib/languages"
+import {LOCAL_LANGUAGES, getLanguageName, getFlagEmoji} from "../lib/languages"
 
 interface LanguageSelectorProps {
   currentLanguage: string
@@ -70,7 +70,7 @@ export function LanguageSelector({
     }
   }
 
-  const filteredLanguages = AVAILABLE_LANGUAGES.filter(
+  const filteredLanguages = LOCAL_LANGUAGES.filter(
     (lang) =>
       lang.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       lang.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -150,7 +150,16 @@ export function LanguageSelector({
                 <div className="flex items-center gap-4">
                   <span className="text-2xl overflow-hidden">{getFlagEmoji(lang.code)}</span>
                   <div className="flex flex-col items-start">
-                    <span className="text-base font-bold text-gray-900 dark:text-zinc-50 font-['Red_Hat_Display']">{lang.name}</span>
+                    <span className="text-base font-bold text-gray-900 dark:text-zinc-50 font-['Red_Hat_Display']">
+                      {lang.name}
+                      {lang.needsDownload && (
+                        <span
+                          className="ml-1.5 text-xs font-normal text-gray-400 dark:text-zinc-500"
+                          title="Needs a one-time model download (Settings › Speech)">
+                          ⬇
+                        </span>
+                      )}
+                    </span>
                     {lang.nativeName && (
                       <span className="text-sm text-gray-500 dark:text-zinc-400 font-['Red_Hat_Display']">{lang.nativeName}</span>
                     )}

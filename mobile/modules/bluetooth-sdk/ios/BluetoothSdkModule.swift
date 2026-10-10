@@ -74,6 +74,9 @@ public class BluetoothSdkModule: Module, MentraBluetoothSDKDelegate {
             "audio_disconnected",
             "save_setting",
             "local_transcription",
+            "local_translation",
+            "local_translation_unavailable",
+            "local_transcription_unavailable",
             "phone_notification",
             "native_notification_status",
             "native_notification_delivery",
@@ -820,6 +823,39 @@ public class BluetoothSdkModule: Module, MentraBluetoothSDKDelegate {
             }
         }
 
+        // On-device Apple Speech + Translation pipeline (the Easy2Say stack).
+        // `pairs` is [{source, target}] BCP-47 wire tags; ignored when inactive.
+        // `probeReason` carries the probe verdict so a late failure can report
+        // why the hop was expected to work.
+        AsyncFunction("setLocalTranslation") { (active: Bool, pairs: [[String: String]], probeReason: String?) in
+            await MainActor.run {
+                DeviceManager.shared.setLocalTranslation(active: active, pairs: pairs, probeReason: probeReason)
+            }
+        }
+
+        // Whether the on-device hop can serve `pairs` right now — the engine
+        // probes before activating so an unavailable hop falls back to cloud.
+        AsyncFunction("probeLocalTranslation") { (pairs: [[String: String]]) -> [String: Any] in
+            await DeviceManager.shared.probeLocalTranslation(pairs: pairs)
+        }
+
+        // Transcribe-only Apple Speech pipeline (Contract A): `locales` are
+        // BCP-47 wire tags ("auto"/"*" expands to preferred languages);
+        // ignored when inactive. Emits local_transcription events with
+        // provider "apple-speech".
+        AsyncFunction("setLocalTranscription") { (active: Bool, locales: [String]) in
+            await MainActor.run {
+                DeviceManager.shared.setLocalTranscription(active: active, locales: locales)
+            }
+        }
+
+        // Whether the transcribe-only hop can serve `locales` right now —
+        // the engine probes before resolving a forceLocal subscription to
+        // the Apple engine.
+        AsyncFunction("probeLocalTranscription") { (locales: [String]) -> [String: Any] in
+            await DeviceManager.shared.probeLocalTranscription(locales: locales)
+        }
+
         // MARK: - Display Commands
 
         AsyncFunction("clearDisplay") {
@@ -883,6 +919,29 @@ public class BluetoothSdkModule: Module, MentraBluetoothSDKDelegate {
             )
         }
         #endif
+
+        // MARK: - On-device language model (session.llm)
+        //
+        // Apple Foundation Models behind the miniapp session.llm contract.
+        // iOS 26+; LocalLanguageModel degrades to unsupported-os below that.
+        // Results are envelopes ({ok, code, reason?, ...}) — errors never
+        // throw across the bridge so the host maps codes deterministically.
+
+        AsyncFunction("llmAvailability") { () -> [String: Any] in
+            await LocalLanguageModel.availability()
+        }
+
+        AsyncFunction("llmPrewarm") { () in
+            await LocalLanguageModel.prewarm()
+        }
+
+        AsyncFunction("llmGenerate") { (request: [String: Any]) -> [String: Any] in
+            await LocalLanguageModel.generate(request: request)
+        }
+
+        AsyncFunction("llmCancel") { (requestId: String) in
+            await LocalLanguageModel.cancel(requestId: requestId)
+        }
     }
 
     @MainActor

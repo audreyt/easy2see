@@ -1,11 +1,12 @@
 import {useState, useEffect} from "react"
 
-import {TranslationSettings} from "../hooks/useSettings"
+import {RecordingNotice, TranslationSettings} from "../hooks/useSettings"
 import {DisplayPreview} from "../hooks/useTranslations"
 
 interface SettingsProps {
   settings: TranslationSettings | null
   displayPreview: DisplayPreview | null
+  recording?: RecordingNotice | null
   accentColor?: string
   accentForeground?: string
   onUpdateDisplayLines: (lines: number) => Promise<boolean>
@@ -13,11 +14,13 @@ interface SettingsProps {
   onUpdateWordBreaking: (enabled: boolean) => Promise<boolean>
   onUpdateShowOriginalText: (enabled: boolean) => Promise<boolean>
   onUpdateGlassesDisplayMode: (mode: "translation" | "both") => Promise<boolean>
+  onUpdateSaveRecording: (enabled: boolean) => Promise<boolean>
 }
 
 export function Settings({
   settings,
   displayPreview,
+  recording = null,
   accentColor = "#2089F3",
   accentForeground = "#FFFFFF",
   onUpdateDisplayLines,
@@ -25,6 +28,7 @@ export function Settings({
   onUpdateWordBreaking,
   onUpdateShowOriginalText,
   onUpdateGlassesDisplayMode,
+  onUpdateSaveRecording,
 }: SettingsProps) {
   const [displayLines, setDisplayLines] = useState(settings?.displayLines || 3)
   const [displayWidth, setDisplayWidth] = useState(settings?.displayWidth || 1)
@@ -33,6 +37,7 @@ export function Settings({
   const [glassesDisplayMode, setGlassesDisplayMode] = useState<"translation" | "both">(
     settings?.glassesDisplayMode ?? "translation",
   )
+  const [saveRecording, setSaveRecording] = useState(settings?.saveRecording ?? false)
 
   // Sync local state with props when settings change (e.g., from SSE update or initial load)
   useEffect(() => {
@@ -42,6 +47,7 @@ export function Settings({
       setWordBreaking(settings.wordBreaking)
       setShowOriginalText(settings.showOriginalText ?? true)
       setGlassesDisplayMode(settings.glassesDisplayMode ?? "translation")
+      setSaveRecording(settings.saveRecording ?? false)
     }
   }, [settings])
 
@@ -87,6 +93,15 @@ export function Settings({
     if (!success) {
       // Revert on failure
       setGlassesDisplayMode(settings?.glassesDisplayMode ?? "translation")
+    }
+  }
+
+  const handleSaveRecordingChange = async (enabled: boolean) => {
+    setSaveRecording(enabled) // Optimistic update
+    const success = await onUpdateSaveRecording(enabled)
+    if (!success) {
+      // Revert on failure
+      setSaveRecording(settings?.saveRecording ?? false)
     }
   }
 
@@ -337,6 +352,69 @@ export function Settings({
               />
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Recording */}
+      <div className="space-y-4">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-zinc-50 font-['Red_Hat_Display']">Recording</h2>
+
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-zinc-800 space-y-3">
+          <div className="flex items-center gap-3">
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="text-gray-900 dark:text-zinc-50">
+              <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+              <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+              <line x1="12" y1="18" x2="12" y2="22" />
+            </svg>
+            <span className="text-base font-medium text-gray-900 dark:text-zinc-50 font-['Red_Hat_Display']">
+              Save recording when session ends
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-zinc-800 rounded-xl">
+            <div className="flex-1 pr-4">
+              <p className="text-sm text-gray-700 dark:text-zinc-200 font-['Red_Hat_Display']">
+                {saveRecording
+                  ? "Session audio and a bilingual transcript are saved to Files › On My iPhone › Easy2See › Recordings"
+                  : "Nothing is recorded. Turn on to save audio + transcript to Files when the session ends"}
+              </p>
+            </div>
+            <button
+              onClick={() => handleSaveRecordingChange(!saveRecording)}
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+                saveRecording ? "" : "bg-gray-300 dark:bg-zinc-600"
+              }`}
+              style={saveRecording ? {backgroundColor: accentColor} : {}}
+              role="switch"
+              aria-checked={saveRecording}
+              aria-label="Save recording when session ends">
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${
+                  saveRecording ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+
+          {recording && recording.state !== "idle" && (
+            <p
+              className={`text-xs font-['Red_Hat_Display'] px-1 ${
+                recording.state === "error"
+                  ? "text-red-600 dark:text-red-400"
+                  : recording.state === "saved"
+                    ? "text-green-600 dark:text-green-400"
+                    : "text-gray-500 dark:text-zinc-400"
+              }`}>
+              {recording.state === "recording" ? "● Recording this session" : recording.message}
+            </p>
+          )}
         </div>
       </div>
     </div>

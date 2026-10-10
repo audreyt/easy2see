@@ -10,7 +10,13 @@ export interface MicrosoftEntraAuthConfig {
   teamsScopes: string[]
 }
 
-export type DeploymentAuthConfig = MentraAccountAuthConfig | MicrosoftEntraAuthConfig
+export interface LocalAuthConfig {
+  /** Device-local mode: no account, no cloud. The app synthesizes a stable
+   * on-device identity and never contacts Mentra services. */
+  mode: "local"
+}
+
+export type DeploymentAuthConfig = MentraAccountAuthConfig | MicrosoftEntraAuthConfig | LocalAuthConfig
 
 export interface DeploymentManagedMiniapp {
   packageName: string

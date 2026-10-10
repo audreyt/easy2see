@@ -395,6 +395,9 @@ function stopLc3FrameSizeWatcher(): void {
 }
 
 function construct(): void {
+  if (getConfigValues().localOnly) {
+    throw new Error("cloudClient: this deployment is local-only; the cloud client is never constructed")
+  }
   ensureTransports()
 
   const endpoints = resolveEndpoints()
@@ -559,6 +562,10 @@ export const cloudClientService = {
    */
   init(): void {
     if (client) return
+    if (getConfigValues().localOnly) {
+      console.log(`${LOG_TAG}: local-only deployment — cloud client disabled`)
+      return
+    }
     ensureAuthWatch()
     construct()
   },
@@ -569,6 +576,10 @@ export const cloudClientService = {
    * URLs don't keep reconnecting to a stale override); omit to keep the current.
    */
   reconnect(endpoints?: {core?: string; runtime: string} | null): void {
+    if (getConfigValues().localOnly) {
+      console.log(`${LOG_TAG}: reconnect skipped — local-only deployment`)
+      return
+    }
     if (endpoints !== undefined) endpointsOverride = endpoints
     try {
       client?.runtime.close()

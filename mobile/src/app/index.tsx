@@ -4,7 +4,7 @@ import {View, ActivityIndicator, Platform, Linking} from "react-native"
 import semver from "semver"
 
 import {Button, Header, Icon, Screen, Text} from "@/components/ignite"
-import {MentraLogoStandalone} from "@/components/brands/MentraLogoStandalone"
+import {AppMark} from "@/components/brands/AppMark"
 import {useAuth} from "@/contexts/AuthContext"
 import {useDeeplink} from "@/contexts/DeeplinkContext"
 import {useAppTheme} from "@/contexts/ThemeContext"
@@ -110,6 +110,7 @@ export default function InitScreen() {
 
   const navigateToDestination = useCallback(async () => {
     console.log("INDEX: navigateToDestination()")
+    const isLocalAuth = activeDeployment.manifest.auth.mode === "local"
     if (!user?.id) {
       await new Promise((resolve) => setTimeout(resolve, NAVIGATION_DELAY))
       replace(activeDeployment.kind === "workspace" ? "/auth/workspace-signin" : "/auth/start", {
@@ -123,7 +124,9 @@ export default function InitScreen() {
     const onboardingDone = engine.settings.get(SETTINGS.onboarding_completed.key)
     const wearable = engine.settings.get(SETTINGS.default_wearable.key)
 
-    if (!onboardingDone && !wearable) {
+    // Local mode (Easy2See) skips the welcome onboarding entirely: its only
+    // step is glasses pairing, which the home screen's PairGlassesCard covers.
+    if (!isLocalAuth && !onboardingDone && !wearable) {
       await new Promise((resolve) => setTimeout(resolve, NAVIGATION_DELAY))
       replace("/onboarding/welcome", {transition: "fade"})
       return
@@ -141,7 +144,17 @@ export default function InitScreen() {
     await new Promise((resolve) => setTimeout(resolve, NAVIGATION_DELAY))
     setAnimationDelayed()
     clearHistoryAndGoHome({transition: "none"})
-  }, [user, getPendingRoute, processUrl, clearHistoryAndGoHome, replace, replaceAll, setPendingRoute, setAnimation])
+  }, [
+    user,
+    activeDeployment,
+    getPendingRoute,
+    processUrl,
+    clearHistoryAndGoHome,
+    replace,
+    replaceAll,
+    setPendingRoute,
+    setAnimation,
+  ])
 
   const checkLoggedIn = async (): Promise<void> => {
     if (!user) {
@@ -156,8 +169,11 @@ export default function InitScreen() {
     // Cloud V2 cutover (issue 019): the app holds V2 tokens directly. There is no
     // legacy Cloud V1 exchange; cloud-client obtains and exchanges a subject token
     // itself via the auth provider. Boot just needs a valid session, then init.
+    // Local mode (Easy2See) has no token by design — the session IS the
+    // device-local identity and there is no cloud to exchange with.
+    const isLocalAuth = activeDeployment.manifest.auth.mode === "local"
     const token = session?.token
-    if (!token) {
+    if (!token && !isLocalAuth) {
       // A cached user alone cannot start Engine. Return to login instead of
       // leaving Continue Anyway and Retry looping on the auth-error screen.
       replaceAll(activeDeployment.kind === "workspace" ? "/auth/workspace-signin" : "/auth/start")
@@ -336,10 +352,16 @@ export default function InitScreen() {
     const init = async () => {
       console.log("INDEX: init()")
       await checkCustomUrl()
+      if (activeDeployment.manifest.auth.mode === "local") {
+        // Local mode (Easy2See): no Runtime to ask for a minimum version and
+        // no token exchange — go straight to engine init + home.
+        await handleTokenExchange()
+        return
+      }
       await checkCloudVersion()
     }
     init()
-  }, [authLoading, isNavigationReady, selectionResolved])
+  }, [authLoading, isNavigationReady, selectionResolved, activeDeployment])
 
   useEffect(() => {
     setAnimation("fade")
@@ -358,12 +380,12 @@ export default function InitScreen() {
 
   return (
     <Screen preset="fixed" safeAreaEdges={["bottom"]} extraAndroidInsets>
-      <Header RightActionComponent={<MentraLogoStandalone />} />
+      <Header RightActionComponent={<AppMark />} />
 
       {/* Content */}
       <View className="flex-1 items-center justify-center px-6">
         {state === "outdated" ? (
-          <MentraLogoStandalone width={100} height={48} />
+          <AppMark width={100} height={48} />
         ) : (
           <Icon name={statusConfig.icon as any} size={64} color={statusConfig.iconColor} />
         )}

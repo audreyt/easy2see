@@ -236,3 +236,6 @@ export {
 
 // Permission types
 export type {PermissionType, PermissionRecord} from "./session"
+
+// On-device language model (session.llm)
+export type {LlmModule, LlmAvailability, LlmGenerateRequest, LlmGenerateResult, LlmUnavailableReason} from "./modules/llm"

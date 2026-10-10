@@ -17,6 +17,7 @@ const miniappConfiguration = z
 
 const authSchema = z.discriminatedUnion("mode", [
   z.object({mode: z.literal("mentra-account")}).strict(),
+  z.object({mode: z.literal("local")}).strict(),
   z
     .object({
       mode: z.literal("microsoft-entra"),

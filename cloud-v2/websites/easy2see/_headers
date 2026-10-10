@@ -1,0 +1,2 @@
+/*
+  Content-Security-Policy: script-src 'sha256-DBIQUdF+LyfTZwzXCTPhgXKz8pvdv2AB9O0/cTyw4fc='; connect-src 'none'

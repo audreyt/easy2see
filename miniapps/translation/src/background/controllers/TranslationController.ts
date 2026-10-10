@@ -7,7 +7,7 @@
  *   UserSession        -> start() lifecycle + translation subscription
  *   SettingsManager    -> storage-backed settings (load on start, persist on change)
  *   TranslationsManager -> translation list bookkeeping + UI broadcast
- *   DisplayManager     -> CaptionsFormatter-driven glasses rendering + 40s clear
+ *   DisplayManager     -> CaptionsFormatter-driven glasses rendering
  *
  * The source language is intentionally not a setting. The app subscribes to
  * any-source -> target-language translation so it can translate whatever the
@@ -27,9 +27,12 @@ import type {
   UnsubscribeFn,
 } from "@mentra/miniapp/background"
 
+import {fileStamp, mmss, SessionRecorder, type RecordingFileNames} from "../recording/SessionRecorder"
+
 import {CaptionsFormatter} from "../../core/CaptionsFormatter"
 import type {Channels} from "../../shared/channels"
 import type {TranslationEntry, TranslationSettings, TranslationsSnapshot, DisplayPreview} from "../../shared/types"
+import {chineseScript} from "../../shared/languages"
 
 /** Primary language subtag, lowercased ("fr-FR" -> "fr", "FR" -> "fr"). */
 function primarySubtag(code: string | undefined): string {
@@ -55,7 +58,16 @@ function isSameLanguagePassthrough(
   originalText: string | undefined,
 ): boolean {
   const src = primarySubtag(sourceLanguage)
-  if (src && src !== "auto") return src === primarySubtag(targetLanguage)
+  if (src && src !== "auto") {
+    if (src !== primarySubtag(targetLanguage)) return false
+    // Primary subtags match. For Chinese that is not enough: the registry
+    // keys zh by region (zh-CN / zh-TW / zh-HK), so Simplified speech into a
+    // Traditional target (or vice versa) is a REAL translation, not a
+    // passthrough — compare the written form, not just "zh".
+    const srcScript = chineseScript(sourceLanguage)
+    if (srcScript) return srcScript === chineseScript(targetLanguage)
+    return true
+  }
   return !originalText
 }
 
@@ -93,6 +105,7 @@ const DEFAULT_SETTINGS: TranslationSettings = {
   wordBreaking: false,
   showOriginalText: true,
   glassesDisplayMode: "translation",
+  saveRecording: false,
 }
 
 const STORAGE_KEYS = {
@@ -102,7 +115,13 @@ const STORAGE_KEYS = {
   wordBreaking: "wordBreaking",
   showOriginalText: "showOriginalText",
   glassesDisplayMode: "glassesDisplayMode",
+  saveRecording: "saveRecording",
+  recordingSeq: "recordingSeq",
 } as const
+
+/** Folder under the app's Documents dir recordings are exported into. */
+const RECORDING_EXPORT_FOLDER = "Recordings/Translation"
+const RECORDING_APP_NAME = "Translation"
 
 export class TranslationController {
   private subscribed = false
@@ -110,7 +129,6 @@ export class TranslationController {
 
   private translationCleanup: UnsubscribeFn | null = null
   private translationTarget: string | null = null
-  private inactivityTimer: ReturnType<typeof setTimeout> | null = null
 
   // session.ui, retyped against this miniapp's channel registry. The SDK types
   // `session.ui` as UIModule<default-channels>; cast through unknown to bind it
@@ -120,6 +138,18 @@ export class TranslationController {
     on: On
     onOpen: (cb: () => void) => () => void
   }
+  private formatter = new CaptionsFormatter()
+  private renderRevision = 0
+  private currentIsFinal = true
+  private lastSpeakerId: string | undefined = undefined
+  private currentDisplayText = ""
+  private lastDisplayPreview: DisplayPreview | null = null
+  private cloudStatus: CloudClientStatus = {status: "disconnected", audioTransport: "none"}
+
+  // ── Session recording (opt-in; audio + transcript to Files on session end) ──
+  private readonly recorder: SessionRecorder
+  private recordingSeq = 0
+  private recordingStartedAt = 0
 
   // ── Settings state (SettingsManager) ─────────────────────────────────────
   private settings: TranslationSettings = {...DEFAULT_SETTINGS}
@@ -129,15 +159,12 @@ export class TranslationController {
   private readonly maxTranslations = 100
 
   // ── Display state (DisplayManager) ───────────────────────────────────────
-  private formatter = new CaptionsFormatter()
-  private renderRevision = 0
-  private currentIsFinal = true
-  private lastSpeakerId: string | undefined = undefined
-  private currentDisplayText = ""
-  private lastDisplayPreview: DisplayPreview | null = null
-  private cloudStatus: CloudClientStatus = {status: "disconnected", audioTransport: "none"}
 
-  constructor(private readonly session: MiniappSession) {}
+  constructor(private readonly session: MiniappSession) {
+    // Field initializers run before the `session` param property is assigned
+    // under Bun's emit — build the recorder here, not inline above.
+    this.recorder = new SessionRecorder(session, RECORDING_EXPORT_FOLDER)
+  }
 
   /** Idempotent — safe to call multiple times. */
   async start(): Promise<void> {
@@ -161,6 +188,15 @@ export class TranslationController {
     this.subscribeTranslation()
     this.subscribeCloudStatus()
 
+    // A hard disconnect ends the session — finalize the recording. Async
+    // finalize can't complete inside the ~50ms grace window, but the host
+    // still commits the in-flight blobs (header kept current per flush).
+    try {
+      this.unsubs.push(this.session.onBeforeDisconnect(() => this.stop()))
+    } catch {
+      /* before-disconnect hook not available in this runtime — ignore */
+    }
+
     this.registerUiHandlers()
     this.registerActions()
     console.log(`LocalTranslation: started (target=${this.settings.targetLanguage})`)
@@ -177,10 +213,7 @@ export class TranslationController {
       this.translationCleanup = null
       this.translationTarget = null
     }
-    if (this.inactivityTimer) {
-      clearTimeout(this.inactivityTimer)
-      this.inactivityTimer = null
-    }
+    void this.endRecording("session ended")
     for (const u of this.unsubs) {
       try {
         u()
@@ -246,6 +279,11 @@ export class TranslationController {
         this.clearTranscripts()
       }),
     )
+    this.unsubs.push(
+      this.ui.on("translation:set-save-recording", ({enabled}) => {
+        void this.setSaveRecording(enabled)
+      }),
+    )
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -307,14 +345,17 @@ export class TranslationController {
 
   private async loadSettings(): Promise<void> {
     try {
-      const [targetLanguage, linesRaw, widthRaw, wbRaw, showOrigRaw, glassesModeRaw] = await Promise.all([
-        this.session.storage.get(STORAGE_KEYS.targetLanguage),
-        this.session.storage.get(STORAGE_KEYS.displayLines),
-        this.session.storage.get(STORAGE_KEYS.displayWidth),
-        this.session.storage.get(STORAGE_KEYS.wordBreaking),
-        this.session.storage.get(STORAGE_KEYS.showOriginalText),
-        this.session.storage.get(STORAGE_KEYS.glassesDisplayMode),
-      ])
+      const [targetLanguage, linesRaw, widthRaw, wbRaw, showOrigRaw, glassesModeRaw, saveRecRaw, recSeqRaw] =
+        await Promise.all([
+          this.session.storage.get(STORAGE_KEYS.targetLanguage),
+          this.session.storage.get(STORAGE_KEYS.displayLines),
+          this.session.storage.get(STORAGE_KEYS.displayWidth),
+          this.session.storage.get(STORAGE_KEYS.wordBreaking),
+          this.session.storage.get(STORAGE_KEYS.showOriginalText),
+          this.session.storage.get(STORAGE_KEYS.glassesDisplayMode),
+          this.session.storage.get(STORAGE_KEYS.saveRecording),
+          this.session.storage.get(STORAGE_KEYS.recordingSeq),
+        ])
 
       this.settings.targetLanguage = targetLanguage || DEFAULT_SETTINGS.targetLanguage
 
@@ -337,6 +378,11 @@ export class TranslationController {
         glassesModeRaw === "both" || glassesModeRaw === "translation"
           ? glassesModeRaw
           : DEFAULT_SETTINGS.glassesDisplayMode
+      this.settings.saveRecording = saveRecRaw === "true"
+      this.recordingSeq = (() => {
+        const p = parseInt(recSeqRaw ?? "", 10)
+        return Number.isNaN(p) || p < 0 ? 0 : p
+      })()
     } catch (err) {
       console.log("LocalTranslation: failed to load settings, using defaults", err)
       this.settings = {...DEFAULT_SETTINGS}
@@ -399,6 +445,92 @@ export class TranslationController {
     this.broadcastSettings()
   }
 
+  // ───────────────────────────────────────────────────────────────────────
+  // Session recording (opt-in)
+  // ───────────────────────────────────────────────────────────────────────
+
+  private async setSaveRecording(enabled: boolean): Promise<void> {
+    if (enabled === this.settings.saveRecording) return
+    this.settings.saveRecording = enabled
+    await this.persist(STORAGE_KEYS.saveRecording, String(enabled))
+    if (!enabled && this.recorder.active) {
+      // Turning the setting off mid-session discards the in-progress capture —
+      // the user's intent is clearly "do not save this".
+      await this.recorder.abort()
+      this.notifyRecording("idle")
+    } else {
+      this.syncRecording()
+    }
+    this.broadcastSettings()
+  }
+
+  /**
+   * The translation session runs while the translation subscription is live —
+   * effectively the miniapp's lifetime (start() → stop()/disconnect). The mic
+   * subscription exists only inside that window and only while the setting is
+   * on: raw audio_chunk forces device-wide PCM mode, so it must never leak.
+   */
+  private syncRecording(): void {
+    if (this.recorder.active || !this.settings.saveRecording || !this.translationCleanup) return
+    const caps = this.session.capabilities as Record<string, unknown> | null
+    if (caps?.hasMicrophone === false) return
+    this.recordingSeq += 1
+    void this.persist(STORAGE_KEYS.recordingSeq, String(this.recordingSeq))
+    this.recordingStartedAt = Date.now()
+    const base = `${fileStamp(new Date(this.recordingStartedAt))} ${RECORDING_APP_NAME} ${this.recordingSeq}`
+    const names: RecordingFileNames = {wav: `${base}.wav`, md: `${base}.md`}
+    this.recorder
+      .begin(names, this.transcriptHeader())
+      .then(() => this.notifyRecording("recording"))
+      .catch((err) => {
+        console.log("LocalTranslation: recording could not start", err)
+        this.notifyRecording("error", `Recording could not start: ${err instanceof Error ? err.message : String(err)}`)
+      })
+  }
+
+  private async endRecording(reason: string): Promise<void> {
+    if (!this.recorder.active) return
+    const result = await this.recorder.finish(this.transcriptFooter(reason))
+    if (result.errors.length > 0) {
+      this.notifyRecording("error", result.errors.join(" · "))
+    } else if (result.exported.length > 0) {
+      this.notifyRecording("saved", `Saved ${result.exported.length} files to Files › ${RECORDING_EXPORT_FOLDER}`)
+    } else {
+      this.notifyRecording("idle")
+    }
+  }
+
+  private notifyRecording(state: "idle" | "recording" | "saved" | "error", message?: string): void {
+    try {
+      this.ui.send("translation:recording", {state, message})
+    } catch {
+      /* UI bus unavailable (e.g. mid-disconnect) — the log line still lands */
+      if (state === "error") console.log(`LocalTranslation: recording error: ${message}`)
+    }
+  }
+
+  private transcriptHeader(): string {
+    const started = new Date(this.recordingStartedAt)
+    return [
+      `# ${RECORDING_APP_NAME} session recording`,
+      "",
+      `- App: ${RECORDING_APP_NAME}`,
+      `- Started: ${started.toLocaleString()}`,
+      `- Target language: ${this.settings.targetLanguage}`,
+      "",
+      "## Transcript",
+      "",
+    ].join("\n")
+  }
+
+  private transcriptFooter(reason: string): string {
+    const ended = new Date()
+    const durationMs = Math.max(0, ended.getTime() - this.recordingStartedAt)
+    return ["", "## Session", "", `- Ended: ${ended.toLocaleString()} (${reason})`, `- Duration: ${mmss(durationMs)}`, ""].join(
+      "\n",
+    )
+  }
+
   /**
    * Rebuild the glasses formatter from the stored final translations,
    * recombining each with its original transcription per the current
@@ -453,13 +585,20 @@ export class TranslationController {
       // Any source language -> selected target language. Translating whatever
       // is spoken into one chosen language is the app's whole model; the source
       // is intentionally not configurable (see the file header).
+      //
+      // forceLocal routes this subscription through the on-device Apple
+      // Speech + Translation pipeline (the Easy2Say stack) instead of the
+      // cloud hop. The cloud provider collapses script-specific Chinese
+      // targets (zh-TW -> zh) into a single Chinese output; the local hop is
+      // what makes zh-TW actually Traditional.
       // Attach the replacement before releasing the old subscription. This
-      // keeps the microphone/cloud translation union live while settings are
+      // keeps the microphone/translation union live while settings are
       // changed and preserves the working subscription if replacement fails.
       const previousCleanup = this.translationCleanup
-      const nextCleanup = this.session.translation.to(targetLanguage as TranscriptionLanguage, handler)
+      const nextCleanup = this.session.translation.to(targetLanguage as TranscriptionLanguage, handler, {forceLocal: true})
       this.translationCleanup = nextCleanup
       this.translationTarget = targetLanguage
+      this.syncRecording()
       if (previousCleanup) {
         try {
           previousCleanup()
@@ -504,6 +643,17 @@ export class TranslationController {
       } else {
         this.legacyUpdateInterim(entry)
       }
+    }
+    if (entry.isFinal) {
+      // Transcript: one entry per FINAL utterance — heard line then the
+      // translation line, both timestamped on the audio clock. Interims are
+      // never written.
+      const t = mmss(this.recorder.elapsedMs())
+      const heard = entry.originalText ?? entry.text
+      this.recorder.noteLine(
+        `[${t}] heard (${entry.sourceLanguage ?? "?"}): ${heard}\n` +
+          `[${t}] translation (${entry.targetLanguage}): ${entry.text}\n`,
+      )
     }
 
     this.ui.send("translation:live-translation", {
@@ -656,7 +806,6 @@ export class TranslationController {
     }
     const result = this.formatter.processTranscription(text, isFinal, speakerId, speakerChanged)
     this.showOnGlasses(result.displayText, isFinal)
-    this.resetInactivityTimer()
   }
 
   private showOnGlasses(text: string, isFinal: boolean): void {
@@ -714,20 +863,6 @@ export class TranslationController {
         return line.replace(/^[.,;:!?。，；：！？]+/, "").trim()
       })
       .join("\n")
-  }
-
-  private resetInactivityTimer(): void {
-    if (this.inactivityTimer) {
-      clearTimeout(this.inactivityTimer)
-    }
-    // Clear the formatter + glasses display after 40s of inactivity.
-    this.inactivityTimer = setTimeout(() => {
-      this.renderRevision++
-      this.currentDisplayText = ""
-      this.formatter.clear()
-      this.lastSpeakerId = undefined
-      void this.session.display.render([])
-    }, 40000)
   }
 
   private broadcastDisplayPreview(text: string, lines: string[], isFinal: boolean): void {

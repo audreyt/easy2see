@@ -1,5 +1,6 @@
 import BluetoothSdk from "@mentra/bluetooth-sdk"
 import * as RNFS from "@dr.pogodin/react-native-fs"
+import {internalStoragePath, migrateDocumentsDirToAppSupport} from "./appPaths"
 
 /**
  * Offline TTS via Sherpa-ONNX Supertonic 3.
@@ -222,7 +223,8 @@ class TTSModelManager {
   }
 
   getModelDirectory(): string {
-    return `${RNFS.DocumentDirectoryPath}/tts_models`
+    migrateDocumentsDirToAppSupport("tts_models")
+    return `${internalStoragePath(RNFS.DocumentDirectoryPath)}/tts_models`
   }
 
   /** All languages share the same on-disk Supertonic install. */

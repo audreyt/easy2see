@@ -45,10 +45,13 @@ import localDisplayManager from "./LocalDisplayManager"
 import type {DisplayPayload} from "./LocalDisplayManager"
 import headingService from "./HeadingService"
 import localSttFallbackCoordinator from "./LocalSttFallbackCoordinator"
+import localTranslationCoordinator from "./LocalTranslationCoordinator"
+import localTranscriptionCoordinator from "./LocalTranscriptionCoordinator"
 import micStateCoordinator from "./MicStateCoordinator"
 import micSessionManager, {MIC_SOURCE_CONFLICT, type MicSession} from "./MicSessionManager"
 import {ENGINE_ONLY_USE_CASES, MIC_USE_CASES, VOICE_CALL_PACKAGES, type MicUseCase} from "./micPolicy"
 import {BlobStore} from "./BlobStore"
+import {LocalLlmHandlers} from "./LocalLlmHandlers"
 import {CloudAudioSubscriptionSync} from "./CloudAudioSubscriptionSync"
 import {phoneCameraFovCoordinator} from "./PhoneCameraFovCoordinator"
 import {phonePhotoCoordinator} from "./PhonePhotoCoordinator"
@@ -56,8 +59,19 @@ import {phoneStreamCoordinator} from "./PhoneStreamCoordinator"
 import {phoneVideoCoordinator} from "./PhoneVideoCoordinator"
 import {cloudTtsDownloadTimeoutMs, downloadCloudTtsAudio} from "./CloudTtsAudio"
 import {runSentenceTtsPipeline} from "./SentenceTtsPipeline"
-import {summarizeTranscriptionRoutes, transcriptionDeliveryRoute} from "./TranscriptionRouting"
+import {
+  localTranscriptionDeliveryRoute,
+  localTranslationPairs,
+  summarizeTranscriptionRoutes,
+  transcriptionDeliveryRoute,
+  transcriptionSubscriberCounts,
+  translationPairFromStream,
+  translationRoutePatterns,
+  translationRoutesWithCloudFallback,
+  type TranscriptionEngine,
+} from "./TranscriptionRouting"
 import {TranscriptionSubscriptions, type TranscriptionListenerRegistration} from "./TranscriptionSubscriptions"
+import sttModelManager from "./STTModelManager"
 import {prepareTtsSentences} from "./TtsTextSanitizer"
 import {handleWifiAdbRequest} from "./WifiAdbRequest"
 import {cloudClientService} from "./CloudClientService"
@@ -155,6 +169,12 @@ interface ConnectedMiniapp {
   forceLocalTranscriptionStreams: Set<string>
   /** Transcription streams with at least one listener using the default/cloud route. */
   cloudTranscriptionStreams: Set<string>
+  /** Translation streams this app explicitly requires to stay on-device. */
+  forceLocalTranslationStreams: Set<string>
+  /** Translation streams with at least one listener using the default/cloud route. */
+  cloudTranslationStreams: Set<string>
+  /** Requested on-device engine per forceLocal transcription stream (Contract A). */
+  transcriptionEngines: Map<string, TranscriptionEngine>
   sendMessage: (raw: string) => void
   lastPongAt: number
   unansweredPingRounds: number
@@ -623,8 +643,46 @@ class LocalMiniappRuntime {
   // secret never leaves the device.
   private localSecret = `miniapp_${Date.now()}_${Math.random().toString(36).slice(2, 14)}`
   private usedTokens = new Set<string>()
+  /**
+   * iOS probe verdict from LocalTranslationCoordinator: when true, forceLocal
+   * translation subscribers also count as cloud subscribers (the on-device
+   * hop cannot run, so the pair is served by Soniox instead of going silent).
+   */
+  private localTranslationCloudFallback = false
+  /**
+   * Contract A engine resolution from LocalTranscriptionCoordinator, keyed
+   * `${packageName}|${stream}`. Entries absent here resolve to "sherpa"
+   * (unresolved "auto" keeps the historical Sherpa route until the probe
+   * lands); an explicit "apple" request is Apple even before resolution.
+   */
+  private resolvedTranscriptionEngines = new Map<string, "apple" | "sherpa">()
 
-  private constructor() {}
+  private constructor() {
+    // The coordinator publishes the iOS probe verdict here (no import cycle:
+    // it never imports this runtime). While the on-device hop is unavailable,
+    // forceLocal translation pairs count as cloud subscribers so the same
+    // pair is served by the cloud (Soniox) instead of going silent.
+    localTranslationCoordinator.setCloudFallbackHandler((cloudFallback) => {
+      if (this.localTranslationCloudFallback === cloudFallback) return
+      this.localTranslationCloudFallback = cloudFallback
+      this.updateCloudSubscriptions()
+    })
+    // Contract A: the transcription coordinator publishes resolved engines
+    // (apple/sherpa per forceLocal subscription) plus the streams whose
+    // Apple route cannot run. The runtime stores the map (it drives Sherpa
+    // counting and event delivery) and emits a visible unavailable event on
+    // each affected stream — never a cloud hop.
+    localTranscriptionCoordinator.setSherpaLanguageCodes(
+      sttModelManager.getAvailableLanguages().map((l) => l.code),
+    )
+    localTranscriptionCoordinator.setResolutionHandler((resolved, unavailable) => {
+      this.resolvedTranscriptionEngines = resolved
+      for (const item of unavailable) {
+        this.emitLocalTranscriptionUnavailable(item.packageName, item.stream, item.reason)
+      }
+      this.updateCloudSubscriptions()
+    })
+  }
 
   /** Snapshot of miniapps actively subscribed to hardware button events. */
   public getButtonPressSubscribers(): string[] {
@@ -912,6 +970,9 @@ class LocalMiniappRuntime {
       subscriptions: new Set(),
       forceLocalTranscriptionStreams: new Set(),
       cloudTranscriptionStreams: new Set(),
+      forceLocalTranslationStreams: new Set(),
+      cloudTranslationStreams: new Set(),
+      transcriptionEngines: new Map(),
       sendMessage: sendFn,
       lastPongAt: Date.now(),
       unansweredPingRounds: 0,
@@ -1104,6 +1165,8 @@ class LocalMiniappRuntime {
 
     // Release native navigation and its GPS request when the miniapp stops.
     this.navigationHandlers.onDisconnect(packageName)
+    // Cancel any in-flight on-device generation owned by this app.
+    this.llmHandlers.onDisconnect(packageName)
 
     // Recompute heading subscription — if this app was the last subscriber,
     // the sensor will stop.
@@ -1422,6 +1485,11 @@ class LocalMiniappRuntime {
           this.blobStore.handleShare(packageName, payload, requestId),
         )
         break
+      case MiniappRequestType.BLOB_EXPORT:
+        this.enqueueBlobRequest(packageName, requestId, () =>
+          this.blobStore.handleExport(packageName, payload, requestId),
+        )
+        break
 
       // Cloud-coordinated features
       case MiniappRequestType.PHOTO:
@@ -1545,6 +1613,16 @@ class LocalMiniappRuntime {
         this.handleTranscriptionConfig(packageName, payload, requestId)
         break
 
+      // On-device language model (session.llm)
+      case MiniappRequestType.LLM_AVAILABILITY:
+        void this.llmHandlers.handleAvailability(packageName, requestId)
+        break
+      case MiniappRequestType.LLM_GENERATE:
+        void this.llmHandlers.handleGenerate(packageName, payload, requestId)
+        break
+      case MiniappRequestType.LLM_CANCEL:
+        void this.llmHandlers.handleCancel(packageName, payload, requestId)
+        break
       case MiniappRequestType.READY:
         // MentraJSRouter observes READY to open the UI; nothing to do here.
         break
@@ -1835,7 +1913,7 @@ class LocalMiniappRuntime {
     if (!app) return
 
     const rawStreams = (payload.subscriptions ?? payload.streams) as
-      | (string | {stream: string; rate?: string; forceLocal?: boolean; includeCloud?: boolean})[]
+      | (string | {stream: string; rate?: string; forceLocal?: boolean; includeCloud?: boolean; engine?: string})[]
       | undefined
     // Normalize: objects like {stream: "location_stream", rate: "realtime"} → extract stream name
     // "location_stream" is the rate-bearing alias for "location_update".
@@ -1844,6 +1922,9 @@ class LocalMiniappRuntime {
     let requestedLocationRate: string | null = null
     const forceLocalTranscriptionStreams = new Set<string>()
     const cloudTranscriptionStreams = new Set<string>()
+    const forceLocalTranslationStreams = new Set<string>()
+    const cloudTranslationStreams = new Set<string>()
+    const transcriptionEngines = new Map<string, TranscriptionEngine>()
     const streams = rawStreams?.map((s) => {
       if (typeof s === "object" && s !== null) {
         if (s.stream === "location_stream") {
@@ -1854,13 +1935,27 @@ class LocalMiniappRuntime {
         }
         if (s.forceLocal === true && s.stream.startsWith("transcription:")) {
           forceLocalTranscriptionStreams.add(s.stream)
+          // Contract A: record the requested on-device engine (default
+          // "auto") for forceLocal transcription streams. Validation below
+          // rejects unknown values; resolution happens in the coordinator.
+          transcriptionEngines.set(
+            s.stream,
+            s.engine === "sherpa" || s.engine === "apple" ? s.engine : "auto",
+          )
         }
         if (s.stream.startsWith("transcription:") && (s.forceLocal !== true || s.includeCloud === true)) {
           cloudTranscriptionStreams.add(s.stream)
         }
+        if (s.forceLocal === true && s.stream.startsWith("translation:")) {
+          forceLocalTranslationStreams.add(s.stream)
+        }
+        if (s.stream.startsWith("translation:") && (s.forceLocal !== true || s.includeCloud === true)) {
+          cloudTranslationStreams.add(s.stream)
+        }
         return s.stream
       }
       if (s.startsWith("transcription:")) cloudTranscriptionStreams.add(s)
+      if (s.startsWith("translation:")) cloudTranslationStreams.add(s)
       return s
     }) as string[] | undefined
     if (!Array.isArray(streams)) {
@@ -1873,7 +1968,27 @@ class LocalMiniappRuntime {
 
     for (const subscription of rawStreams ?? []) {
       const stream = typeof subscription === "string" ? subscription : subscription.stream
-      if (stream.startsWith("translation:") && !isFeatureEnabled("cloudSpeech")) {
+      const isTranslation = stream.startsWith("translation:")
+      const forceLocal = typeof subscription === "object" && subscription.forceLocal === true
+      const includeCloud = typeof subscription === "object" && subscription.includeCloud === true
+      if (isTranslation && forceLocal) {
+        const pair = translationPairFromStream(stream)
+        if (!pair || pair.target === "*") {
+          this.sendResult(packageName, requestId, false, undefined, {
+            code: MiniappErrorCode.INVALID_ARGUMENT,
+            message: "forceLocal translation requires a concrete target language",
+          })
+          return
+        }
+      }
+      if (isTranslation && forceLocal && !isFeatureEnabled("onDeviceSpeech")) {
+        this.sendResult(packageName, requestId, false, undefined, {
+          code: MiniappErrorCode.NOT_IMPLEMENTED,
+          message: "On-device speech is disabled by this deployment",
+        })
+        return
+      }
+      if (isTranslation && (!forceLocal || includeCloud) && !isFeatureEnabled("cloudSpeech")) {
         this.sendResult(packageName, requestId, false, undefined, {
           code: MiniappErrorCode.NOT_IMPLEMENTED,
           message: "Cloud speech is disabled by this deployment",
@@ -1881,8 +1996,6 @@ class LocalMiniappRuntime {
         return
       }
       if (!stream.startsWith("transcription:")) continue
-      const forceLocal = typeof subscription === "object" && subscription.forceLocal === true
-      const includeCloud = typeof subscription === "object" && subscription.includeCloud === true
       if (forceLocal && !isFeatureEnabled("onDeviceSpeech")) {
         this.sendResult(packageName, requestId, false, undefined, {
           code: MiniappErrorCode.NOT_IMPLEMENTED,
@@ -1894,6 +2007,14 @@ class LocalMiniappRuntime {
         this.sendResult(packageName, requestId, false, undefined, {
           code: MiniappErrorCode.NOT_IMPLEMENTED,
           message: "Cloud speech is disabled by this deployment",
+        })
+        return
+      }
+      const engine = typeof subscription === "object" ? subscription.engine : undefined
+      if (engine !== undefined && engine !== "auto" && engine !== "sherpa" && engine !== "apple") {
+        this.sendResult(packageName, requestId, false, undefined, {
+          code: MiniappErrorCode.INVALID_ARGUMENT,
+          message: `transcription engine must be "auto", "sherpa", or "apple" (got ${JSON.stringify(engine)})`,
         })
         return
       }
@@ -1939,6 +2060,15 @@ class LocalMiniappRuntime {
     )
     app.cloudTranscriptionStreams = new Set(
       [...cloudTranscriptionStreams].filter((stream) => app.subscriptions.has(stream)),
+    )
+    app.forceLocalTranslationStreams = new Set(
+      [...forceLocalTranslationStreams].filter((stream) => app.subscriptions.has(stream)),
+    )
+    app.cloudTranslationStreams = new Set(
+      [...cloudTranslationStreams].filter((stream) => app.subscriptions.has(stream)),
+    )
+    app.transcriptionEngines = new Map(
+      [...transcriptionEngines].filter(([stream]) => app.subscriptions.has(stream)),
     )
     this.replaceStreamSubscribers(packageName, previousSubscriptions, app.subscriptions)
 
@@ -2893,6 +3023,15 @@ class LocalMiniappRuntime {
       this.sendResult(packageName, requestId, ok, result, error),
     getUserId: () => cloudClientService.getMentraUserId(),
   })
+
+  /**
+   * `session.llm` — on-device Apple Foundation Models. The LLM_* dispatcher
+   * cases delegate here; one in-flight generate per miniapp (newer cancels
+   * older), native errors map to the LLM_* MiniappErrorCodes.
+   */
+  private readonly llmHandlers = new LocalLlmHandlers(
+    (packageName, requestId, ok, result, error) => this.sendResult(packageName, requestId, ok, result, error),
+  )
   private readonly blobRequestQueues = new Map<string, Promise<void>>()
 
   private readonly simpleStorage = new LocalMiniappStorage({
@@ -5785,6 +5924,9 @@ class LocalMiniappRuntime {
     app.transcriptionListeners.replace([...app.cloudTranscriptionStreams].map((stream) => ({
       id: `legacy:${stream}`, stream, legacy: true,
     })), cloudClientService.getAudioPosition())
+    app.forceLocalTranslationStreams.clear()
+    app.cloudTranslationStreams = new Set(streams.filter((stream) => stream.startsWith("translation:")))
+    app.transcriptionEngines.clear()
     this.replaceStreamSubscribers(packageName, previousSubscriptions, app.subscriptions)
 
     this.recomputeMicRequirements()
@@ -5830,35 +5972,69 @@ class LocalMiniappRuntime {
    */
   private updateCloudSubscriptions(): void {
     const cloudStreams = new Set<string>()
+    const localTranslationStreams = new Set<string>()
     let transcriptionLang: string | null = null
     let forceLocalTranscriptionLang: string | null = null
     let hasForceLocalTranscription = false
+    const transcriptionRequests: {key: string; packageName: string; stream: string; language: string; engine: TranscriptionEngine}[] =
+      []
     for (const [stream, subscribers] of this.streamSubscribers) {
       if (subscribers.size === 0) continue
       // Only transcription / translation need cloud delivery. Location and
       // notifications are sourced natively on the phone — no cloud hop.
       if (stream.startsWith("translation:")) {
-        cloudStreams.add(stream)
+        const routes = summarizeTranscriptionRoutes(subscribers, (packageName) =>
+          this.appTranslationRoutesForSubscription(packageName, stream),
+        )
+        if (routes.hasForceLocalSubscriber) localTranslationStreams.add(stream)
+        if (routes.hasCloudSubscriber) cloudStreams.add(stream)
       }
       if (stream.startsWith("transcription:")) {
         const language = stream.substring("transcription:".length)
-        if (transcriptionLang === null) transcriptionLang = language
 
-        const routes = summarizeTranscriptionRoutes(subscribers, (packageName) =>
-          this.appTranscriptionRoutesForSubscription(packageName, stream),
-        )
-        if (routes.hasForceLocalSubscriber) {
+        // Contract A: per-subscriber engine resolution decides whether a
+        // forceLocal subscription counts toward Sherpa (localSttFallback),
+        // the Apple pipeline, or neither. Apple-routed subscribers never
+        // count as Sherpa or cloud subscriptions.
+        let hasSherpaSubscriber = false
+        let hasCloudSubscriber = false
+        for (const packageName of subscribers) {
+          const routes = this.appTranscriptionRoutesForSubscription(packageName, stream)
+          const counts = transcriptionSubscriberCounts(
+            routes,
+            this.resolvedTranscriptionEngineFor(packageName, stream),
+          )
+          if (routes.forceLocal) {
+            transcriptionRequests.push({
+              key: `${packageName}|${stream}`,
+              packageName,
+              stream,
+              language,
+              engine: this.connectedApps.get(packageName)?.transcriptionEngines.get(stream) ?? "auto",
+            })
+          }
+          if (counts.sherpa) hasSherpaSubscriber = true
+          if (counts.cloud) hasCloudSubscriber = true
+        }
+        // A stream whose only subscribers are Apple-routed must not activate
+        // Sherpa — not even as a cloud-outage fallback.
+        if ((hasSherpaSubscriber || hasCloudSubscriber) && transcriptionLang === null) {
+          transcriptionLang = language
+        }
+        if (hasSherpaSubscriber) {
           hasForceLocalTranscription = true
           if (forceLocalTranscriptionLang === null) forceLocalTranscriptionLang = language
         }
-        if (routes.hasCloudSubscriber) cloudStreams.add(stream)
+        if (hasCloudSubscriber) cloudStreams.add(stream)
       }
     }
+    localTranscriptionCoordinator.onSubscriptionChange(transcriptionRequests)
     localSttFallbackCoordinator.onSubscriptionChange(
       transcriptionLang !== null,
       forceLocalTranscriptionLang ?? transcriptionLang,
       hasForceLocalTranscription,
     )
+    localTranslationCoordinator.onSubscriptionChange(localTranslationPairs(localTranslationStreams))
 
     // Mirror the same set as typed AudioSubscription[] and push it to the cloud
     // runtime.
@@ -6076,6 +6252,7 @@ class LocalMiniappRuntime {
     data: unknown,
     transcriptionSource?: TranscriptionEventSource,
     tokens?: TranscriptionData["tokens"],
+    transcriptionProvider?: "apple-speech" | "sherpa",
   ): void {
     // Normalize incoming event names to miniapp protocol stream types
     const normalizedStream = this.normalizeStreamType(streamType)
@@ -6161,6 +6338,18 @@ class LocalMiniappRuntime {
       if (normalizedStream.startsWith("transcription:") && transcriptionSource) {
         const routes = this.appTranscriptionRoutesForEvent(packageName, normalizedStream)
         transcriptionRoute =
+          transcriptionSource === "local" && transcriptionProvider
+            ? (localTranscriptionDeliveryRoute(
+                transcriptionProvider,
+                routes,
+                this.appAppleTranscriptionRouteForEvent(packageName, normalizedStream),
+                cloudClientService.isConnected(),
+              ) ?? undefined)
+            : (transcriptionDeliveryRoute(transcriptionSource, routes, cloudClientService.isConnected()) ?? undefined)
+        if (!transcriptionRoute) continue
+      } else if (normalizedStream.startsWith("translation:") && transcriptionSource) {
+        const routes = this.appTranslationRoutesForEvent(packageName, normalizedStream)
+        transcriptionRoute =
           transcriptionDeliveryRoute(transcriptionSource, routes, cloudClientService.isConnected()) ?? undefined
         if (!transcriptionRoute) continue
       }
@@ -6238,6 +6427,45 @@ class LocalMiniappRuntime {
     }
   }
 
+  private appTranslationRoutesForSubscription(
+    packageName: string,
+    stream: string,
+  ): {
+    cloud: boolean
+    forceLocal: boolean
+  } {
+    const app = this.connectedApps.get(packageName)
+    return translationRoutesWithCloudFallback(
+      {
+        cloud: app?.cloudTranslationStreams.has(stream) === true,
+        forceLocal: app?.forceLocalTranslationStreams.has(stream) === true,
+      },
+      this.localTranslationCloudFallback,
+    )
+  }
+
+  /**
+   * Route flags for a CONCRETE `translation:<source>:<target>` event against
+   * one app: the event matches any of the wildcard patterns the app may have
+   * subscribed under, so union the route flags across all matching patterns.
+   */
+  private appTranslationRoutesForEvent(
+    packageName: string,
+    stream: string,
+  ): {
+    cloud: boolean
+    forceLocal: boolean
+  } {
+    const app = this.connectedApps.get(packageName)
+    let cloud = false
+    let forceLocal = false
+    for (const pattern of translationRoutePatterns(stream)) {
+      if (app?.cloudTranslationStreams.has(pattern)) cloud = true
+      if (app?.forceLocalTranslationStreams.has(pattern)) forceLocal = true
+    }
+    return translationRoutesWithCloudFallback({cloud, forceLocal}, this.localTranslationCloudFallback)
+  }
+
   private appTranscriptionRoutesForEvent(
     packageName: string,
     stream: string,
@@ -6254,6 +6482,60 @@ class LocalMiniappRuntime {
         app?.forceLocalTranscriptionStreams.has(stream) === true ||
         app?.forceLocalTranscriptionStreams.has(autoStream) === true,
     }
+  }
+
+  /**
+   * Contract A: the engine a forceLocal transcription stream resolves to.
+   * An explicit "apple" request is Apple even before the coordinator's probe
+   * lands (it must never count as a Sherpa subscription); an unresolved
+   * "auto" keeps the historical Sherpa route until resolution publishes.
+   */
+  private resolvedTranscriptionEngineFor(packageName: string, stream: string): "apple" | "sherpa" {
+    const requested = this.connectedApps.get(packageName)?.transcriptionEngines.get(stream)
+    if (requested === "apple") return "apple"
+    return this.resolvedTranscriptionEngines.get(`${packageName}|${stream}`) ?? "sherpa"
+  }
+
+  /**
+   * Whether an incoming Apple `local_transcription` event may reach this
+   * miniapp for `stream`: the app must hold a forceLocal subscription on the
+   * concrete stream or `transcription:auto`, and that subscription must have
+   * resolved to the Apple engine.
+   */
+  private appAppleTranscriptionRouteForEvent(packageName: string, stream: string): boolean {
+    const app = this.connectedApps.get(packageName)
+    const autoStream = `${MiniappStreamType.TRANSCRIPTION}:auto`
+    for (const candidate of [stream, autoStream]) {
+      if (
+        app?.forceLocalTranscriptionStreams.has(candidate) === true &&
+        this.resolvedTranscriptionEngineFor(packageName, candidate) === "apple"
+      ) {
+        return true
+      }
+    }
+    return false
+  }
+
+  /**
+   * Contract A: the Apple route cannot serve a forceLocal subscription —
+   * emit a visible unavailable event on the subscribed stream itself so the
+   * miniapp's transcription handler sees it. `transcriptionRoute: "forceLocal"`
+   * keeps the SDK's route filter from dropping it for local listeners.
+   */
+  private emitLocalTranscriptionUnavailable(packageName: string, stream: string, reason: string): void {
+    this.sendToMiniapp(packageName, {
+      type: MiniappResponseType.EVENT,
+      streamType: stream,
+      transcriptionRoute: "forceLocal",
+      data: {
+        type: "transcription",
+        text: "",
+        isFinal: false,
+        provider: "apple-speech",
+        unavailable: true,
+        unavailableReason: reason,
+      },
+    })
   }
 
   /**

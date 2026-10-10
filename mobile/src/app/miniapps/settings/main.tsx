@@ -13,6 +13,7 @@ import {translate} from "@/i18n"
 import {SETTINGS, useSetting} from "@mentra/engine"
 import {useRef} from "react"
 import {useRegisterCapsule} from "@/stores/capsule"
+import {isEasy2SeeBuild} from "@/services/deployment/officialManifest"
 
 export default function MainSettingsPage() {
   const {theme} = useAppTheme()
@@ -84,6 +85,13 @@ export default function MainSettingsPage() {
               label={translate("settings:privacySettings")}
               onPress={() => push("/miniapps/settings/privacy")}
             />
+            {isEasy2SeeBuild() && (
+              <RouteButton
+                icon={<Icon name="info-circle" size={24} color={theme.colors.secondary_foreground} />}
+                label="About Easy2See"
+                onPress={() => push("/miniapps/settings/about")}
+              />
+            )}
           </Group>
 
           <Group title={translate("deviceSettings:advancedSettings")}>

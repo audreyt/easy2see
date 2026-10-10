@@ -45,7 +45,10 @@ export class DeploymentStore {
   constructor(private readonly persistence: DeploymentStorage = new MmkvDeploymentStorage()) {
     const restored = restoreDeploymentSelection(persistence.load())
     this.active = restored ?? createConsumerDeployment()
-    this.resolved = restored !== null
+    // A local-auth deployment (Easy2See) has no Mentra-vs-workspace choice to
+    // make: it is resolved the moment it exists, so a fresh install never sees
+    // the selector.
+    this.resolved = restored !== null || this.active.manifest.auth.mode === "local"
   }
 
   getActive(): ActiveDeployment {
@@ -124,8 +127,10 @@ export class DeploymentStore {
 
   private setActive(deployment: ActiveDeployment, resolved = true): void {
     this.active = deployment
-    this.resolved = resolved
-    for (const listener of this.listeners) listener(deployment, resolved)
+    // Local-auth deployments are always resolved — there is no account or
+    // workspace selection to return to.
+    this.resolved = resolved || deployment.manifest.auth.mode === "local"
+    for (const listener of this.listeners) listener(deployment, this.resolved)
   }
 }
 

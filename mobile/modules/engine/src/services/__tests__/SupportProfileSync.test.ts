@@ -34,7 +34,7 @@ mock.module("expo-constants", () => ({
 mock.module("expo-device", () => ({modelName: "iPhone 17 Pro"}))
 import {reactNative} from "./reactNativeTestMock"
 
-reactNative.Platform = {OS: "ios", Version: "26.0"}
+Object.assign(reactNative.Platform as object, {OS: "ios", Version: "26.0"})
 mock.module("../../stores/glasses", () => ({
   useGlassesStore: {
     getState: () => glassesState,

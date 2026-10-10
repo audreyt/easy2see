@@ -34,6 +34,9 @@ export interface IslandConfigValues {
   coreUrl?: string | null
   /** cloud-v2 runtime service base URL. */
   runtimeUrl?: string | null
+  /** Deployment has no cloud at all (auth.mode "local"): never construct the
+   * cloud client, open the runtime socket, or watch auth state. */
+  localOnly?: boolean
   /** Host's live manifest/override resolver, also used on automatic reconnects. */
   resolveCloudEndpoints?: () => {core: string; runtime: string}
   /** Scope for debug settings written through engine.dev. */
@@ -68,6 +71,13 @@ export interface IslandConfigValues {
    * after the laptop changes networks. Omitted in production/OEM builds.
    */
   devServerHost?: () => string | undefined
+  /**
+   * EASY2SEE builds relocate app-internal storage (blobs, STT/TTS models,
+   * MMKV) out of the Files-visible Documents directory into
+   * Library/Application Support, because UIFileSharingEnabled exposes all of
+   * Documents to browsing and deletion. Unset/false ⇒ stock Documents paths.
+   */
+  useAppSupportStorage?: boolean
 }
 
 export interface ManagedMiniappPolicyEntry {

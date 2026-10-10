@@ -21,6 +21,8 @@ import {shallow} from "zustand/shallow"
 
 import localMiniappRuntime from "./LocalMiniappRuntime"
 import localSttFallbackCoordinator from "./LocalSttFallbackCoordinator"
+import localTranslationCoordinator from "./LocalTranslationCoordinator"
+import localTranscriptionCoordinator from "./LocalTranscriptionCoordinator"
 import {phonePhotoCoordinator} from "./PhonePhotoCoordinator"
 import {phoneStreamCoordinator} from "./PhoneStreamCoordinator"
 import {isGlassesConnected} from "./GlassesReadiness"
@@ -214,9 +216,48 @@ export function startDeviceEventRouter(): void {
   // went away with the pseudo captions renderer.)
   subs.push(
     BluetoothSdk.addListener("local_transcription", (event) => {
+      // Contract A: Apple Speech lane events carry provider "apple-speech"
+      // and are gated on the transcription coordinator; Sherpa events keep
+      // the existing localSttFallback gate. provider is normalized to the
+      // contract value ("sherpa") for miniapps.
+      const provider = event.provider === "apple-speech" ? "apple-speech" : "sherpa"
+      if (provider === "apple-speech") {
+        if (!localTranscriptionCoordinator.isActive()) return
+        const lang = event.transcribeLanguage ?? localTranscriptionCoordinator.getActiveLanguage() ?? "en-US"
+        localMiniappRuntime.forwardEvent(`transcription:${lang}`, {...event, provider}, "local", undefined, provider)
+        return
+      }
       if (!localSttFallbackCoordinator.isActive()) return
       const lang = event.transcribeLanguage ?? localSttFallbackCoordinator.getActiveLanguage() ?? "en-US"
-      localMiniappRuntime.forwardEvent(`transcription:${lang}`, event, "local")
+      localMiniappRuntime.forwardEvent(`transcription:${lang}`, {...event, provider}, "local", undefined, provider)
+    }),
+  )
+  // On-device Apple Speech+Translation results (the Easy2Say stack) → local
+  subs.push(
+    BluetoothSdk.addListener("local_translation", (event) => {
+      if (!localTranslationCoordinator.isActive()) return
+      const source = event.sourceLanguage ?? "auto"
+      const target = event.targetLanguage ?? localTranslationCoordinator.getActiveTarget() ?? "en-US"
+      localMiniappRuntime.forwardEvent(`translation:${source}:${target}`, event, "local")
+    }),
+  )
+  // Late failure from the on-device translation pipeline (prepare/translate
+  // threw, or the TranslationSession never arrived): the coordinator marks
+  // the probe unavailable and reconciles the pair onto cloud. Ignored while
+  // the coordinator is not active.
+  subs.push(
+    BluetoothSdk.addListener("local_translation_unavailable", (event) => {
+      localTranslationCoordinator.onNativeUnavailable(event.reason)
+    }),
+  )
+
+  // Late failure from the transcribe-only Apple Speech pipeline (every lane
+  // gave up): the coordinator marks the probed locales unavailable and
+  // reconciles — affected streams re-resolve to Sherpa or report unavailable
+  // to their miniapps. Ignored while the coordinator is not active.
+  subs.push(
+    BluetoothSdk.addListener("local_transcription_unavailable", (event) => {
+      localTranscriptionCoordinator.onNativeUnavailable(event.reason)
     }),
   )
 

@@ -58,6 +58,11 @@ jest.mock("@/utils/auth/authClient", () => ({
     completeSignupVerification: (...args: unknown[]) => mockCompleteSignupVerification(...args),
   },
 }))
+jest.mock("@/services/deployment", () => ({
+  deploymentStore: {
+    getActive: () => ({manifest: {auth: {mode: "mentra-account"}}}),
+  },
+}))
 
 let processUrl: ReturnType<typeof useDeeplink>["processUrl"]
 function Probe() {

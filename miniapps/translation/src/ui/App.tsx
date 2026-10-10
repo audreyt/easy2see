@@ -26,12 +26,14 @@ export function App() {
   const {developerMode, holdHandlers} = useDeveloperMode()
   const {
     settings,
+    recording,
     updateTargetLanguage,
     updateDisplayLines,
     updateDisplayWidth,
     updateWordBreaking,
     updateShowOriginalText,
     updateGlassesDisplayMode,
+    updateSaveRecording,
   } = useSettings()
   const {
     translations,
@@ -80,6 +82,13 @@ export function App() {
 
         {/* Main Content Area */}
         <div className="flex-1 overflow-hidden relative">
+          {recording?.state === "error" && (
+            <div className="absolute top-0 inset-x-0 z-10 px-4 pt-2">
+              <p className="text-xs font-['Red_Hat_Display'] text-white bg-red-600/90 rounded-xl px-3 py-2 shadow">
+                {recording.message ?? "Recording could not be saved"}
+              </p>
+            </div>
+          )}
           {showTargetLanguageSelector && settings ? (
             <TargetLanguageSelector
               currentTargetLanguage={settings.targetLanguage}
@@ -92,6 +101,7 @@ export function App() {
             <Settings
               settings={settings}
               displayPreview={displayPreview}
+              recording={recording}
               accentColor={presentation.accentColor}
               accentForeground={presentation.accentForeground}
               onUpdateDisplayLines={updateDisplayLines}
@@ -99,6 +109,7 @@ export function App() {
               onUpdateWordBreaking={updateWordBreaking}
               onUpdateShowOriginalText={updateShowOriginalText}
               onUpdateGlassesDisplayMode={updateGlassesDisplayMode}
+              onUpdateSaveRecording={updateSaveRecording}
             />
           ) : (
             <TranslationList

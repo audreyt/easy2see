@@ -19,6 +19,7 @@ import type {
   CloudClientStatus,
   DisplayPreview,
   LiveTranscript,
+  SpeechStatus,
   Transcript,
 } from "./types"
 
@@ -39,18 +40,21 @@ export interface Channels {
   "captions:display-capabilities": CaptionsDisplayCapabilities
   /** Phone-owned cloud-client status update. */
   "captions:cloud-status": CloudClientStatus
+  /** No transcript within the watchdog window (or recovery from it). */
+  "captions:speech-status": SpeechStatus | null
 
   // ── UI → background ────────────────────────────────────────────────────
 
   "captions:set-language": {language: string}
   "captions:set-language-hints": {hints: string[]}
-  "captions:set-use-offline-stt": {enabled: boolean}
   "captions:set-display-lines": {lines: number}
   "captions:set-display-width": {width: number}
   "captions:set-caption-position": {position: "top" | "bottom"}
   "captions:set-word-breaking": {enabled: boolean}
   "captions:set-caption-timeout": {seconds: number}
   "captions:clear": Record<string, never>
+  /** User tapped Retry on the no-speech banner — re-subscribe + re-arm. */
+  "captions:retry-speech": Record<string, never>
   /** Explicit hydration request after the WebView has registered listeners. */
   "captions:request-snapshot": Record<string, never>
 }

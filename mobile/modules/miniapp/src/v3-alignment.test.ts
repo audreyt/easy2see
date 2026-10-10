@@ -183,7 +183,7 @@ describe("v3 alignment — session.transcription", () => {
     session.transcription.on(() => {}, {forceLocal: true})
     const env = parseEnvelope(transport.sent[0]!)
     const payload = env!.payload as {subscriptions: Array<string | {stream: string; forceLocal: boolean}>}
-    expect(payload.subscriptions).toContainEqual({stream: "transcription:auto", forceLocal: true})
+    expect(payload.subscriptions).toContainEqual({stream: "transcription:auto", forceLocal: true, engine: "auto"})
   })
 
   test("mixed listeners request both local and cloud routes for one stream", async () => {
@@ -199,6 +199,7 @@ describe("v3 alignment — session.transcription", () => {
     expect(payload.subscriptions).toContainEqual({
       stream: "transcription:auto",
       forceLocal: true,
+      engine: "auto",
       includeCloud: true,
     })
   })
@@ -216,6 +217,7 @@ describe("v3 alignment — session.transcription", () => {
     expect(payload.subscriptions).toContainEqual({
       stream: "transcription:auto",
       forceLocal: true,
+      engine: "auto",
       includeCloud: true,
     })
 
@@ -225,7 +227,7 @@ describe("v3 alignment — session.transcription", () => {
     payload = last!.payload as {
       subscriptions: Array<string | {stream: string; forceLocal: boolean; includeCloud?: boolean}>
     }
-    expect(payload.subscriptions).toContainEqual({stream: "transcription:auto", forceLocal: true})
+    expect(payload.subscriptions).toContainEqual({stream: "transcription:auto", forceLocal: true, engine: "auto"})
   })
 
   test("mixed listeners receive only their routed transcription events", async () => {

@@ -9,6 +9,7 @@ import {
   useDeployment,
 } from "@/services/deployment"
 import {clearDeploymentDebugOverrides} from "@/services/deployment/debugOverrides"
+import {getLocalUserId} from "@/services/deployment/localIdentity"
 import {LogoutUtils} from "@/utils/LogoutUtils"
 import {storage} from "@/utils/storage"
 import mentraAuth from "@/utils/auth/authClient"
@@ -63,6 +64,21 @@ function toMentraSession(session: DeploymentAuthSession | null): MentraAuthSessi
   }
 }
 
+/**
+ * Easy2See's `auth.mode === "local"` session: a signed-in user backed by the
+ * stable device-local id. No token — there is no cloud to present one to, and
+ * callers that gate on `session?.token` are gated on the auth mode instead.
+ */
+function localSession(): MentraAuthSession {
+  return {
+    user: {
+      id: getLocalUserId(),
+      name: "Local",
+      provider: "local",
+    },
+  }
+}
+
 export const AuthProvider: FC<{children: React.ReactNode}> = ({children}) => {
   const [session, setSession] = useState<MentraAuthSession | null>(null)
   const [user, setUser] = useState<MentraAuthUser | null>(null)
@@ -93,7 +109,11 @@ export const AuthProvider: FC<{children: React.ReactNode}> = ({children}) => {
       setLoading(false)
     }
 
-    if (activeDeployment.kind === "consumer" && !selectionResolved) {
+    if (activeDeployment.manifest.auth.mode === "local") {
+      // Local mode (Easy2See): no account, no network. The session is the
+      // stable device-local identity; telemetry stays off.
+      applySession(localSession(), false)
+    } else if (activeDeployment.kind === "consumer" && !selectionResolved) {
       // A fresh install must not contact Mentra account services until the user
       // chooses the consumer path. Preserve seamless upgrades for already
       // signed-in consumers by recognizing their existing local token pair.
@@ -168,6 +188,12 @@ export const AuthProvider: FC<{children: React.ReactNode}> = ({children}) => {
   }
 
   const logout = async () => {
+    if (activeDeployment.manifest.auth.mode === "local") {
+      // There is no account to sign out of. Clearing the local session would
+      // strand the user on an auth screen this build never shows.
+      console.log("AuthContext: logout is a no-op in local mode")
+      return
+    }
     console.log("AuthContext: Starting logout process")
     try {
       if (workspaceAuth && activeDeployment.kind === "workspace") {

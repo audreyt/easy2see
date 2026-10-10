@@ -9,6 +9,7 @@ import {BgTimer, glassesMicProbe, parseMicProbeParams} from "@mentra/engine"
 import {useNavigationStore} from "@/stores/navigation"
 import IncidentReportRequest from "@/components/diagnostics/IncidentReportRequest"
 import {loadAuthoringMiniapp} from "@/services/miniapps/loadAuthoringMiniapp"
+import {deploymentStore} from "@/services/deployment"
 
 /**
  * adb / zsh often backslash-escapes `&` in a custom-scheme URL. That turns
@@ -501,6 +502,9 @@ export const DeeplinkProvider: FC<{children: ReactNode}> = ({children}) => {
       ...deepLinkRoutes,
     ],
     authCheckHandler: async () => {
+      // Local mode (Easy2See) is always signed in — the session is the
+      // device-local identity and there is no auth backend to ask.
+      if (deploymentStore.getActive().manifest.auth.mode === "local") return true
       // TODO: this is a hack when we should really be using the auth context:
       const res = await mentraAuth.getSession()
       if (res.is_error()) {

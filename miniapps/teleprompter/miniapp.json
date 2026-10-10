@@ -1,9 +1,9 @@
 {
   "$schema": "./node_modules/@mentra/miniapp-cli/schema/miniapp.schema.json",
   "packageName": "com.mentra.teleprompter",
-  "version": "1.0.12",
+  "version": "1.0.10",
   "name": "Teleprompter",
-  "description": "Your notes, floating in front of you while you speak. Paste a script, then read it from your glasses — scrolling follows your voice or runs at a speed you set.",
+  "description": "Your notes, floating in front of you while you speak. Paste a script, then read it from your glasses — scrolling follows your voice (recognized on-device) or runs at a speed you set.",
   "icon": "icon.png",
   "type": "standard",
   "sdkVersion": "0.3.0",
@@ -16,7 +16,7 @@
   "permissions": [
     {
       "type": "MICROPHONE",
-      "description": "Used for voice-following auto-scroll — the teleprompter advances as you speak"
+      "description": "Used for voice-following auto-scroll — speech is recognized on-device and the teleprompter advances as you speak"
     }
   ],
   "hardwareRequirements": [
@@ -28,7 +28,7 @@
     {
       "type": "MICROPHONE",
       "level": "OPTIONAL",
-      "description": "Captures speech so scrolling can follow your voice; timed scrolling works without it"
+      "description": "Captures speech so scrolling can follow your voice (on-device recognition); timed scrolling works without it"
     }
   ],
   "actions": [

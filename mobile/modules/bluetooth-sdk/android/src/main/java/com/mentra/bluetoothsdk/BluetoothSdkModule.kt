@@ -348,6 +348,9 @@ class BluetoothSdkModule : Module() {
             "speaking_status",
             "battery_status",
             "local_transcription",
+            "local_translation",
+            "local_translation_unavailable",
+            "local_transcription_unavailable",
             "wifi_status_change",
             "wifi_scan_result",
             "wifi_forget_result",
@@ -881,6 +884,39 @@ class BluetoothSdkModule : Module() {
             withContext(Dispatchers.IO) { deviceManager?.restartTranscriber() }
         }
 
+        // On-device Apple Speech + Translation is iOS-only (the Easy2Say
+        // stack). Accept the call so RN never crashes on an unimplemented
+        // native method; log so the gap is visible. probeReason is accepted
+        // and ignored — Android never runs the hop.
+        AsyncFunction("setLocalTranslation") Coroutine { active: Boolean, _: List<Map<String, String>>, _: String? ->
+            if (active) {
+                Bridge.log("setLocalTranslation: on-device translation pipeline is iOS-only; ignoring")
+            }
+        }
+
+        // Android translation is knowingly dropped (AC-3): the probe reports
+        // unavailable so the engine never activates a hop here — and the
+        // coordinator's policy never cloud-fallbacks on Android either.
+        AsyncFunction("probeLocalTranslation") Coroutine { _: List<Map<String, String>> ->
+            mapOf("available" to false, "reason" to "android-out-of-scope")
+        }
+
+        // Contract A transcribe-only Apple Speech route is iOS-only. Accept
+        // the call so RN never crashes on an unimplemented native method;
+        // log so the gap is visible.
+        AsyncFunction("setLocalTranscription") Coroutine { active: Boolean, _: List<String> ->
+            if (active) {
+                Bridge.log("setLocalTranscription: on-device transcription pipeline is iOS-only; ignoring")
+            }
+        }
+
+        // Android transcription via Apple Speech is out of scope: the probe
+        // reports unavailable so the engine resolves forceLocal streams to
+        // Sherpa or reports them unavailable — never silently.
+        AsyncFunction("probeLocalTranscription") Coroutine { _: List<String> ->
+            mapOf("available" to false, "reason" to "android-out-of-scope")
+        }
+
         // MARK: - Audio Playback Monitoring
 
         SdkAsyncFunction("setOwnAppAudioPlaying") { playing: Boolean ->
@@ -1057,6 +1093,34 @@ class BluetoothSdkModule : Module() {
                         speed.toFloat()
                 )
             }
+        }
+
+        // MARK: - On-device language model (session.llm)
+        //
+        // Apple Foundation Models is iOS-only. Accept the calls so RN never
+        // crashes on an unimplemented native method; report unsupported-os so
+        // the miniapp degrades visibly (same policy as probeLocalTranslation).
+
+        AsyncFunction("llmAvailability") Coroutine { ->
+            mapOf("available" to false, "reason" to "unsupported-os")
+        }
+
+        AsyncFunction("llmPrewarm") Coroutine { ->
+            // no-op on Android
+        }
+
+        AsyncFunction("llmGenerate") Coroutine { _: Map<String, Any?> ->
+            mapOf(
+                    "ok" to false,
+                    "code" to "LLM_UNAVAILABLE",
+                    "reason" to "unsupported-os",
+                    "message" to "On-device language model is iOS-only",
+                    "elapsedMs" to 0,
+            )
+        }
+
+        AsyncFunction("llmCancel") Coroutine { _: String ->
+            // no-op on Android
         }
     }
 }

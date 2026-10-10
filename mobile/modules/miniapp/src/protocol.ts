@@ -179,6 +179,13 @@ export enum MiniappRequestType {
   BLOB_IMPORT = "miniapp_blob_import",
   /** Share a stored blob from disk via the OS share sheet (no bytes cross the bridge). */
   BLOB_SHARE = "miniapp_blob_share",
+  /**
+   * Copy a committed blob into a user-visible folder under the app's
+   * Documents directory (Files app › On My iPhone › <App>). The host
+   * sanitizes folder/filename, creates intermediates, dedupes on collision,
+   * and never overwrites. `keepBlob` (default false) retains the source blob.
+   */
+  BLOB_EXPORT = "miniapp_blob_export",
 
   /** Phone → miniapp liveness probe. Miniapp SDK auto-replies with PONG. */
   PING = "miniapp_ping",
@@ -263,6 +270,18 @@ export enum MiniappRequestType {
    * without stopping the glasses publisher. Resolves after the still has been held `durationMs`.
    */
   MEETING_CAPTURE_STILL = "miniapp_meeting_capture_still",
+
+  /**
+   * On-device Apple Foundation Models (`session.llm`). AVAILABILITY reports
+   * {available, reason?, contextSize?, supportedLanguages?}; GENERATE runs one
+   * stateless generation (fresh LanguageModelSession per call, optional JSON-
+   * Schema guided output); CANCEL aborts an in-flight generate by its
+   * caller-chosen `llmRequestId`. One in-flight generate per miniapp — a newer
+   * GENERATE cancels the older.
+   */
+  LLM_AVAILABILITY = "miniapp_llm_availability",
+  LLM_GENERATE = "miniapp_llm_generate",
+  LLM_CANCEL = "miniapp_llm_cancel",
 }
 
 // ============================================================================
@@ -483,6 +502,18 @@ export enum MiniappErrorCode {
   BLOB_DOWNLOAD_FAILED = "BLOB_DOWNLOAD_FAILED",
   /** `blob.importFile` failed (not the user cancelling — that resolves to null). */
   BLOB_IMPORT_FAILED = "BLOB_IMPORT_FAILED",
+
+  // ----- On-device language model (session.llm) -----
+  /** The on-device model cannot serve requests; `reason` field carries the why. */
+  LLM_UNAVAILABLE = "LLM_UNAVAILABLE",
+  /** The model's safety guardrails refused this prompt or output. */
+  LLM_GUARDRAIL = "LLM_GUARDRAIL",
+  /** Instructions + prompt (+ schema) exceeded the model's context window. */
+  LLM_CONTEXT_EXCEEDED = "LLM_CONTEXT_EXCEEDED",
+  /** The request was cancelled — explicitly or by a newer generate superseding it. */
+  LLM_CANCELLED = "LLM_CANCELLED",
+  /** The model does not support the prompt's language/locale. */
+  LLM_UNSUPPORTED_LANGUAGE = "LLM_UNSUPPORTED_LANGUAGE",
 }
 
 // ============================================================================

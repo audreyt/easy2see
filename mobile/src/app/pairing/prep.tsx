@@ -4,7 +4,7 @@ import {Image, ScrollView, View} from "react-native"
 import type {ImageStyle, ViewStyle} from "react-native"
 
 import {NimoPreparation} from "@/components/pairing/NimoPreparation"
-import {MentraLogoStandalone} from "@/components/brands/MentraLogoStandalone"
+import {AppMark} from "@/components/brands/AppMark"
 import {Button, Header, Icon, Screen, Text} from "@/components/ignite"
 import {useAppTheme} from "@/contexts/ThemeContext"
 import {useNavigationStore} from "@/stores/navigation"
@@ -19,6 +19,7 @@ import {ThemedStyle} from "@/theme"
 import {preparePairingScan} from "@/utils/pairing/preparePairingScan"
 import {isMentraLiveSecurePairingEnabled} from "@/utils/pairing/securePairingFeature"
 import {deploymentStore} from "@/services/deployment"
+import {isEasy2SeeBuild} from "@/services/deployment/officialManifest"
 import {isGlassesModelAllowedByDeployment} from "@/services/deployment/glassesPolicy"
 
 export default function PairingPrepScreen() {
@@ -48,12 +49,13 @@ export default function PairingPrepScreen() {
   }
 
   const SimulatedPairingGuide = () => {
+    const productName = isEasy2SeeBuild() ? "Easy2See" : "MentraOS"
     return (
       <View className="flex-1 flex-col justify-start">
-        <Text text="Preview MentraOS" className="text-2xl font-bold mb-4 text-secondary-foreground" />
+        <Text text={`Preview ${productName}`} className="text-2xl font-bold mb-4 text-secondary-foreground" />
         <GlassesDisplayMirror demoText="Simulated glasses display" />
         <Text
-          text="Experience the full power of MentraOS without physical glasses. Simulated Glasses provides a virtual display that mirrors exactly what you would see on real smart glasses."
+          text={`Experience the full power of ${productName} without physical glasses. Simulated Glasses provides a virtual display that mirrors exactly what you would see on real smart glasses.`}
           className="text-sm text-secondary-foreground mt-6"
         />
       </View>
@@ -329,12 +331,7 @@ export default function PairingPrepScreen() {
 
   return (
     <Screen preset="fixed" safeAreaEdges={["bottom"]} extraAndroidInsets>
-      <Header
-        title={displayName}
-        leftIcon="chevron-left"
-        onLeftPress={goBack}
-        RightActionComponent={<MentraLogoStandalone />}
-      />
+      <Header title={displayName} leftIcon="chevron-left" onLeftPress={goBack} RightActionComponent={<AppMark />} />
       {renderGuide()}
       {renderButtons()}
     </Screen>

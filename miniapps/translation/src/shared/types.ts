@@ -25,6 +25,18 @@ export interface TranslationSettings {
   showOriginalText: boolean
   /** Glasses: render translation only, or original + translation combined. */
   glassesDisplayMode: GlassesDisplayMode
+  /**
+   * When true, each session's microphone audio + bilingual transcript are
+   * saved to the Files app (On My iPhone › Easy2See › Recordings) when the
+   * session ends. Off by default — nothing is captured while off.
+   */
+  saveRecording: boolean
+}
+
+/** Recording lifecycle notice pushed to the UI (status line / error banner). */
+export interface RecordingNotice {
+  state: "idle" | "recording" | "saved" | "error"
+  message?: string
 }
 
 /** A single translation entry shown in the UI's translation list. */

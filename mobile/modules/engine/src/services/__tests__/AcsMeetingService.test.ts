@@ -46,7 +46,7 @@ mock.module("expo-audio", () => ({
 }))
 import {reactNative} from "./reactNativeTestMock"
 
-reactNative.Platform = {OS: "android"}
+Object.assign(reactNative.Platform as object, {OS: "android"})
 import {bluetoothSdk} from "./bluetoothSdkTestMock"
 
 const {

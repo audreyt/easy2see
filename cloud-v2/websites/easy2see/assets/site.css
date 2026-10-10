@@ -1,0 +1,490 @@
+/* Easy2See: a letter on paper.
+   Color and type from Easy2Say; layout restraint from pi-ds4 / pi.dev.
+   See ../DESIGN.md for the reference mapping. */
+
+@font-face {
+  font-family: "Newsreader";
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url("/assets/fonts/newsreader-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Newsreader";
+  font-style: italic;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url("/assets/fonts/newsreader-italic-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "DM Sans";
+  font-style: normal;
+  font-weight: 500 700;
+  font-display: swap;
+  src: url("/assets/fonts/dm-sans-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url("/assets/fonts/jetbrains-mono-latin.woff2") format("woff2");
+}
+
+:root {
+  /* Easy2Say light */
+  --paper: #faf8f3;
+  --shell: #f2efe8;
+  --ink: #1c1718;
+  --text: #2a2325;
+  --plum: #4d2a33;
+  --muted: #75685f;
+  --stone: #b2a496;
+  --border: #e5ddd2;
+  --peach: #fadbc9;
+  --coral: #f4a499;
+  --coral-deep: #d97967;
+  /* Derived from coral-deep so accent text reaches 4.5:1 on paper. */
+  --accent: #a9503f;
+
+  --serif: "Newsreader", "Iowan Old Style", "Songti TC", "Noto Serif TC", "PMingLiU", Georgia, serif;
+  --display: "DM Sans", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "SFMono-Regular", "PingFang TC", "Microsoft JhengHei", Consolas, monospace;
+
+  --s1: 0.25rem;
+  --s2: 0.5rem;
+  --s3: 1rem;
+  --s4: 1.5rem;
+  --s5: 2.5rem;
+  --s6: 4rem;
+  --s7: 6rem;
+
+  --column: 46rem;
+  --frame: clamp(1.25rem, 5vw, 2rem);
+  --text-body: clamp(1.0625rem, 1rem + 0.3vw, 1.1875rem);
+  --text-ui: 0.72rem;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Easy2Say dark */
+    --paper: #1d1719;
+    --shell: #211a1c;
+    --ink: #f2ece4;
+    --text: #cfc4ba;
+    --muted: #97887d;
+    --stone: #8a7d70;
+    --border: #382e30;
+    --peach: #d29a80;
+    --coral: #f4a499;
+    --coral-deep: #e58b78;
+    --accent: #f4a499;
+    --plum: #f4a499;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  background: var(--paper);
+}
+
+body {
+  margin: 0;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  color: var(--text);
+  background: var(--paper);
+  font-family: var(--serif);
+  font-size: var(--text-body);
+  line-height: 1.7;
+  overflow-wrap: break-word;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+main {
+  flex: 1;
+}
+
+::selection {
+  color: var(--paper);
+  background: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--coral-deep);
+  outline-offset: 3px;
+}
+
+a {
+  color: inherit;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--stone);
+  text-decoration-thickness: 0.06em;
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  color: var(--accent);
+  text-decoration-style: solid;
+  text-decoration-color: var(--coral-deep);
+}
+
+.column {
+  width: min(100% - 2 * var(--frame), var(--column));
+  margin-inline: auto;
+}
+
+.skip {
+  position: absolute;
+  left: var(--s3);
+  top: -4rem;
+  z-index: 10;
+  padding: var(--s2) var(--s3);
+  color: var(--paper);
+  background: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--text-ui);
+  letter-spacing: 0.08em;
+  text-decoration: none;
+}
+
+.skip:focus {
+  top: var(--s3);
+  color: var(--paper);
+}
+
+.letterhead {
+  border-bottom: 1px solid var(--border);
+}
+
+.letterhead .column {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2) var(--s4);
+  padding-block: var(--s3);
+  font-family: var(--mono);
+  font-size: var(--text-ui);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.letterhead a {
+  text-decoration: none;
+}
+
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  color: var(--ink);
+}
+
+.mark-glyph {
+  display: block;
+  width: 2.4rem;
+  height: 0.8rem;
+  background: var(--accent);
+  -webkit-mask: url("/assets/easy2see-mark.svg") center / contain no-repeat;
+  mask: url("/assets/easy2see-mark.svg") center / contain no-repeat;
+}
+
+.letterhead nav {
+  display: flex;
+  gap: var(--s4);
+}
+
+.letterhead .language-nav {
+  gap: var(--s3);
+}
+
+@media (max-width: 40rem) {
+  .letterhead .language-nav {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+}
+
+html:lang(zh-TW) body {
+  line-height: 1.9;
+}
+
+html:lang(zh-TW) h1,
+html:lang(zh-TW) h2,
+html:lang(zh-TW) h3 {
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+html:lang(zh-TW) h1 em {
+  display: block;
+  font-style: normal;
+}
+
+html:lang(zh-TW) .eyebrow,
+html:lang(zh-TW) .meta,
+html:lang(zh-TW) .tag,
+html:lang(zh-TW) .label {
+  letter-spacing: 0.06em;
+}
+
+.letterhead nav a {
+  padding-block: var(--s1);
+  color: var(--muted);
+  border-bottom: 1px solid transparent;
+}
+
+.letterhead nav a:hover,
+.letterhead nav a[aria-current="page"] {
+  color: var(--ink);
+  border-bottom-color: var(--coral-deep);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--display);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: clamp(2.1rem, 1.4rem + 3vw, 3.4rem);
+}
+
+h1 em {
+  color: var(--accent);
+  font-family: var(--serif);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-size: clamp(1.4rem, 1.2rem + 0.8vw, 1.75rem);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+p {
+  margin: 0 0 var(--s3);
+}
+
+strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.eyebrow,
+.meta,
+.tag,
+.label {
+  font-family: var(--mono);
+  font-size: var(--text-ui);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.eyebrow {
+  margin: 0 0 var(--s3);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.meta {
+  margin: var(--s3) 0 0;
+  color: var(--muted);
+}
+
+.lede {
+  margin-top: var(--s4);
+  color: var(--ink);
+  font-size: clamp(1.2rem, 1.1rem + 0.5vw, 1.4rem);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.hero,
+.page-head {
+  padding-block: var(--s6) var(--s5);
+}
+
+.page-head {
+  padding-bottom: var(--s4);
+}
+
+.note {
+  margin: var(--s4) 0;
+  padding: var(--s3) var(--s4);
+  background: var(--shell);
+  border-left: 2px solid var(--coral-deep);
+}
+
+.note > :last-child {
+  margin-bottom: 0;
+}
+
+.note h2 {
+  margin-bottom: var(--s2);
+  font-size: 1.2rem;
+}
+
+.label {
+  margin-right: var(--s2);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.section {
+  padding-block: var(--s5);
+  border-top: 1px solid var(--border);
+}
+
+.section > .column > h2 {
+  margin-bottom: var(--s3);
+}
+
+.rows {
+  margin: var(--s4) 0 0;
+}
+
+.row {
+  display: grid;
+  gap: var(--s1) var(--s4);
+  padding-block: var(--s3);
+  border-top: 1px solid var(--border);
+}
+
+.row:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+.row dt {
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.row dd {
+  margin: 0;
+}
+
+.row dd p {
+  margin-bottom: var(--s2);
+}
+
+.tag {
+  display: inline-block;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.tag::before {
+  content: "[ ";
+}
+
+.tag::after {
+  content: " ]";
+}
+
+@media (min-width: 40rem) {
+  .row {
+    grid-template-columns: 9rem minmax(0, 1fr);
+  }
+}
+
+.prose {
+  padding-bottom: var(--s5);
+}
+
+.prose h2 {
+  margin-top: var(--s5);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--border);
+  margin-bottom: var(--s3);
+}
+
+.prose .note h2 {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.prose .note + h2 {
+  margin-top: var(--s4);
+}
+
+.prose ul,
+.prose ol {
+  margin: 0 0 var(--s3);
+  padding-left: 1.4rem;
+}
+
+.prose li {
+  margin-bottom: var(--s2);
+  padding-left: var(--s1);
+}
+
+.prose li::marker {
+  color: var(--coral-deep);
+  font-family: var(--mono);
+  font-size: 0.85em;
+}
+
+.site-footer {
+  margin-top: var(--s5);
+  padding-block: var(--s4);
+  color: var(--muted);
+  background: var(--shell);
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: var(--text-ui);
+  letter-spacing: 0.04em;
+  line-height: 1.8;
+}
+
+.site-footer p {
+  margin: 0 0 var(--s2);
+}
+
+.site-footer p:last-child {
+  margin-bottom: 0;
+}
+
+.site-footer a {
+  color: var(--text);
+}
+
+.site-footer a:hover {
+  color: var(--accent);
+}
+
+.i18n{display:contents}
+html[data-lang="zh"] .i18n[lang="en"],html:not([data-lang="zh"]) .i18n[lang="zh-TW"]{display:none}
+.lang-option{font:inherit;letter-spacing:inherit;text-transform:inherit;background:none;border:0;border-bottom:1px solid transparent;padding:var(--s1) 0;color:var(--muted);cursor:pointer}
+.lang-option:hover,.lang-option[aria-pressed="true"]{color:var(--ink);border-bottom-color:var(--coral-deep)}

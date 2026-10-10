@@ -12,6 +12,9 @@ import {resolvedEndpoints} from "@/services/cloudClient"
 import {engine, SETTINGS, useSetting, getAppBuildInfo} from "@mentra/engine"
 import {ThemedStyle} from "@/theme"
 import showAlert from "@/utils/AlertUtils"
+import {EASY2SEE_CREDIT_LINES} from "@/constants/easy2seeCredits"
+import {isEasy2SeeBuild} from "@/services/deployment/officialManifest"
+import {useNavigationStore} from "@/stores/navigation"
 
 export const VersionInfo = () => {
   const {themed} = useAppTheme()
@@ -152,6 +155,16 @@ export const VersionInfo = () => {
         {isChina && (
           <TouchableOpacity onPress={() => Linking.openURL("https://beian.miit.gov.cn/")}>
             <Text style={themed($icpLink)} text="京ICP备04000001号-2" />
+          </TouchableOpacity>
+        )}
+        {isEasy2SeeBuild() && (
+          <TouchableOpacity
+            accessibilityRole="link"
+            className="items-center mt-1"
+            onPress={() => useNavigationStore.getState().push("/miniapps/settings/about")}
+            testID="easy2see-credit">
+            <Text style={themed($icpLink)} text={EASY2SEE_CREDIT_LINES[0]} />
+            <Text style={themed($buildInfo)} text={EASY2SEE_CREDIT_LINES[1]} />
           </TouchableOpacity>
         )}
       </View>

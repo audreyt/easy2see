@@ -21,7 +21,7 @@
 import {MiniappRequestType, MiniappStreamType} from "../protocol"
 import {MiniappSession} from "../session"
 import type {TranscriptionData, UnsubscribeFn} from "./events"
-import {requireLanguageHint, requireTranscriptionLanguage} from "./languages"
+import {MiniappValidationError, requireLanguageHint, requireTranscriptionLanguage} from "./languages"
 import type {LanguageHint, TranscriptionLanguage} from "./languages"
 
 /** Configuration for cloud-side transcription behavior. */
@@ -46,6 +46,31 @@ export interface TranscriptionOptions {
    * a downloaded local STT model.
    */
   forceLocal?: boolean
+  /**
+   * On-device engine for a `forceLocal` listener (ignored without forceLocal):
+   * - "sherpa": the bundled SherpaOnnx models (en/fr/de/es/zh-Hans/ko).
+   * - "apple": Apple Speech on-device recognition — required for Traditional
+   *   Chinese (zh-TW/zh-HK/zh-MO/zh-Hant*) and languages Sherpa has no model
+   *   for. iOS only; emits an unavailable event when it cannot run.
+   * - "auto" (default): Apple when the locale is Apple-on-device-capable AND
+   *   (Sherpa has no model for it OR it is a Traditional/regional Chinese
+   *   locale); else Sherpa.
+   * Events carry `provider: "apple-speech" | "sherpa"` so handlers can tell
+   * which engine produced them. Never falls back to cloud.
+   */
+  engine?: "auto" | "sherpa" | "apple"
+}
+
+const TRANSCRIPTION_ENGINES: Record<string, true> = {auto: true, sherpa: true, apple: true}
+
+/** Validate the engine option or throw — an unknown engine must never silently route to the wrong STT. */
+function requireTranscriptionEngine(engine: unknown, param: string): void {
+  if (engine === undefined) return
+  if (typeof engine !== "string" || TRANSCRIPTION_ENGINES[engine] !== true) {
+    throw new MiniappValidationError(
+      `${param}: unknown engine ${JSON.stringify(engine)}. Supported values are "auto", "sherpa", "apple".`,
+    )
+  }
 }
 
 export class TranscriptionModule {
@@ -63,6 +88,7 @@ export class TranscriptionModule {
    * event) preserves existing semantics.
    */
   on(handler: (data: TranscriptionData) => void, options: TranscriptionOptions = {}): UnsubscribeFn {
+    requireTranscriptionEngine(options.engine, "transcription.on(options.engine)")
     return this.track(
       this.session._subscribe(`${MiniappStreamType.TRANSCRIPTION}:auto`, handler as (data: unknown) => void, options),
     )
@@ -87,6 +113,7 @@ export class TranscriptionModule {
     handler: (data: TranscriptionData) => void,
     options: TranscriptionOptions = {},
   ): UnsubscribeFn {
+    requireTranscriptionEngine(options.engine, "transcription.forLanguage(options.engine)")
     const langs = (Array.isArray(language) ? language : [language]).map((lang) =>
       requireTranscriptionLanguage(lang, "transcription.forLanguage(language)"),
     )

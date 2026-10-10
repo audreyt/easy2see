@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-zh="Easy2See：手機與智慧眼鏡的即時字幕、翻譯與提詞器">Easy2See: captions, translation and teleprompter for your phone and smart glasses</title>
+    <meta
+      name="description"
+      content="Easy2See shows live captions and translation on your phone, and a teleprompter on supported display glasses such as Even G2. No account. Content stays on your device." data-zh="Easy2See 在手機上顯示即時字幕與翻譯，並在支援的顯示眼鏡（例如 Even G2）上提供提詞器。不需要帳號。內容留在你的裝置上。" />
+    <meta name="theme-color" content="#faf8f3" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1d1719" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="canonical" href="https://easy2see.app/" />
+    <link rel="icon" href="/assets/easy2see-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/assets/site.css" />
+  
+    <script>(function(){
+var K='easy2see-lang',d=document.documentElement,s=null,q=null;
+try{q=new URLSearchParams(location.search).get('lang');s=localStorage.getItem(K);}catch(e){}
+if(q==='en'||q==='zh'){s=q;try{localStorage.setItem(K,q);}catch(e){}history.replaceState(null,'',location.pathname+location.hash);}
+function detect(){if(s==='en'||s==='zh')return s;
+var c=navigator.languages&&navigator.languages.length?navigator.languages:[navigator.language];
+for(var i=0;i<c.length;i++){var t=String(c[i]||'').toLowerCase();if(t.indexOf('zh')===0)return 'zh';if(t.indexOf('en')===0)return 'en';}
+return 'en';}
+function apply(l){d.lang=l==='zh'?'zh-TW':'en';d.setAttribute('data-lang',l);
+var t=document.querySelector('title');if(t){if(!t.hasAttribute('data-en'))t.setAttribute('data-en',t.textContent);t.textContent=l==='zh'?t.getAttribute('data-zh'):t.getAttribute('data-en');}
+var m=document.querySelector('meta[name="description"]');if(m){if(!m.hasAttribute('data-en'))m.setAttribute('data-en',m.getAttribute('content'));m.setAttribute('content',l==='zh'?m.getAttribute('data-zh'):m.getAttribute('data-en'));}
+var b=document.querySelectorAll('.lang-option');for(var i=0;i<b.length;i++)b[i].setAttribute('aria-pressed',String(b[i].getAttribute('data-lang')===l));}
+apply(detect());
+document.addEventListener('DOMContentLoaded',function(){apply(d.getAttribute('data-lang'));});
+document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('.lang-option');if(!b)return;var l=b.getAttribute('data-lang');try{localStorage.setItem(K,l);}catch(x){}apply(l);});
+})();</script>
+  </head>
+  <body>
+<div class="i18n" lang="en">
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="letterhead">
+      <div class="column">
+        <a class="mark" href="/"><span class="mark-glyph" aria-hidden="true"></span>Easy2See</a>
+        <nav aria-label="Main">
+          <a href="/" aria-current="page">Home</a>
+          <a href="/support/">Support</a>
+          <a href="/privacy/">Privacy</a>
+        </nav>
+        <nav class="language-nav" aria-label="Language"><button type="button" class="lang-option" data-lang="en" lang="en" aria-pressed="true">EN</button><button type="button" class="lang-option" data-lang="zh" lang="zh-TW" aria-pressed="false">華文</button></nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <div class="column hero">
+        <p class="eyebrow">For iPhone &middot; Even G2 display glasses &middot; No account</p>
+        <h1>Words you can see, <em>right when you need them.</em></h1>
+        <p class="lede">
+          Easy2See turns speech into live captions and translation on your phone, and puts a teleprompter on supported
+          display glasses such as Even G2. No account. Your content stays on your device.
+        </p>
+        <p class="note">
+          <span class="label">Status</span>Easy2See's first App Store release is being prepared. It is not yet available
+          to download.
+        </p>
+      </div>
+
+      <section class="section" aria-labelledby="features">
+        <div class="column">
+          <h2 id="features">What Easy2See does</h2>
+          <dl class="rows">
+            <div class="row">
+              <dt>Live captions</dt>
+              <dd>
+                <p>See what is being said as it is said, on your phone screen.</p>
+                <span class="tag">Works without glasses</span>
+              </dd>
+            </div>
+            <div class="row">
+              <dt>Translation</dt>
+              <dd>
+                <p>Read speech translated into another language.</p>
+                <span class="tag">Works without glasses</span>
+              </dd>
+            </div>
+            <div class="row">
+              <dt>Teleprompter</dt>
+              <dd>
+                <p>Load a script and read it hands-free on the glasses display.</p>
+                <span class="tag">Needs display glasses, such as Even G2</span>
+              </dd>
+            </div>
+            <div class="row">
+              <dt>Recorder</dt>
+              <dd>
+                <p>Record audio and export it as a WAV file when you choose to.</p>
+                <span class="tag">WAV export</span>
+              </dd>
+            </div>
+            <div class="row">
+              <dt>Easy2Say</dt>
+              <dd>
+                <p>Conversation support that helps you reply, with AI cues on devices that support them.</p>
+                <span class="tag">AI cues need iOS 26+ and Apple Intelligence</span>
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="local">
+        <div class="column">
+          <h2 id="local">Built to stay on your device</h2>
+          <p>
+            Captions, translation, teleprompter, Recorder WAV exports and Easy2Say conversation AI run locally. The
+            developer does not receive your speech, transcripts, scripts or recordings.
+          </p>
+          <p>
+            There is no account to create, and Easy2See does not include app analytics or crash-reporting services. Read
+            the <a href="/privacy/">privacy policy</a> for the details.
+          </p>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="credit">
+        <div class="column">
+          <h2 id="credit">Built on MentraOS</h2>
+          <p>
+            Easy2See is derived from <a href="https://github.com/Mentra-Community/MentraOS">MentraOS</a>, the open
+            source operating system, app store and development framework for smart glasses, created by Mentra Labs, Inc.
+            and the MentraOS contributors. Easy2See starts from their code and inherits the app, the glasses connection
+            and the miniapp runtime from their work. Thank you to Mentra Labs and to every contributor.
+          </p>
+          <p class="note">
+            <span class="label">Credit</span>MentraOS is released under the
+            <a href="https://github.com/Mentra-Community/MentraOS/blob/HEAD/LICENSE">Apache-2.0 license</a>. Source and
+            <a href="https://github.com/Mentra-Community/MentraOS/graphs/contributors">contributors</a> are on
+            <a href="https://github.com/Mentra-Community/MentraOS">GitHub</a>. Easy2See is an independently modified
+            fork. It is not affiliated with or endorsed by Mentra Labs, Inc.
+          </p>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="why-fork">
+        <div class="column">
+          <h2 id="why-fork">Why a fork</h2>
+          <p>
+            MentraOS is a general platform: the Mentra App runs miniapps on your phone and connects to Mentra's cloud
+            services. Audrey Tang's <a href="https://github.com/audreyt/easy2see">fork</a> is narrower on purpose. It is an account-free, on-device variant that focuses
+            on captions, translation, a teleprompter and local conversation AI.
+          </p>
+          <p>
+            It disables Mentra cloud sessions and telemetry, so your speech and transcripts stay on your phone. It is
+            built for display glasses such as Even G2, and it also works with only your phone for captions, translation
+            and review.
+          </p>
+          <p>
+            If you want the full platform, the miniapp store or Mentra's own glasses, use the Mentra App. Mentra Live
+            has no display, so it cannot show captions or teleprompter text in Easy2See. Easy2See is maintained
+            independently; send questions about it to <a href="mailto:au@civic.ai">au@civic.ai</a>, not to Mentra.
+          </p>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="help">
+        <div class="column">
+          <h2 id="help">Questions?</h2>
+          <p>
+            Setup steps, requirements and contact details are on the <a href="/support/">support page</a>, or email
+            <a href="mailto:au@civic.ai">au@civic.ai</a>.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="column">
+        <p>Easy2See by Audrey Tang. App Store release in preparation.</p>
+        <p>
+          A <a href="https://github.com/audreyt/easy2see">fork</a> of <a href="https://github.com/Mentra-Community/MentraOS">MentraOS</a> by Mentra Labs, Inc. and
+          contributors, under the
+          <a href="https://github.com/Mentra-Community/MentraOS/blob/HEAD/LICENSE">Apache-2.0 license</a>.
+        </p>
+        <p>
+          <a href="/">Home</a> &middot; <a href="/support/">Support</a> &middot;
+          <a href="/privacy/">Privacy</a> &middot;
+          <a href="mailto:au@civic.ai">au@civic.ai</a>
+        </p>
+      </div>
+    </footer>
+  </div>
+<div class="i18n" lang="zh-TW">
+    <a class="skip" href="#main">跳到主要內容</a>
+    <header class="letterhead">
+      <div class="column">
+        <a class="mark" href="/"><span class="mark-glyph" aria-hidden="true"></span>Easy2See</a>
+        <nav aria-label="主選單">
+          <a href="/" aria-current="page">首頁</a>
+          <a href="/support/">支援</a>
+          <a href="/privacy/">隱私權</a>
+        </nav>
+        <nav class="language-nav" aria-label="語言"><button type="button" class="lang-option" data-lang="en" lang="en" aria-pressed="false">EN</button><button type="button" class="lang-option" data-lang="zh" lang="zh-TW" aria-pressed="true">華文</button></nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <div class="column hero">
+        <p class="eyebrow">適用於 iPhone &middot; Even G2 顯示眼鏡 &middot; 不需要帳號</p>
+        <h1>看得見的文字，<em>就在你需要的那一刻。</em></h1>
+        <p class="lede">
+          Easy2See 把語音轉成手機上的即時字幕與翻譯，並在支援的顯示眼鏡（例如 Even
+          G2）上提供提詞器。不需要帳號。你的內容留在你的裝置上。
+        </p>
+        <p class="note"><span class="label">狀態</span>Easy2See 的首個 App Store 版本正在準備中，目前還不能下載。</p>
+      </div>
+
+      <section class="section" aria-labelledby="features">
+        <div class="column">
+          <h2 id="features">Easy2See 的功能</h2>
+          <dl class="rows">
+            <div class="row">
+              <dt>即時字幕</dt>
+              <dd>
+                <p>把正在說的話，即時顯示在手機螢幕上。</p>
+                <span class="tag">不需要眼鏡也能使用</span>
+              </dd>
+            </div>
+            <div class="row">
+              <dt>翻譯</dt>
+              <dd>
+                <p>閱讀翻譯成另一種語言的語音內容。</p>
+                <span class="tag">不需要眼鏡也能使用</span>
+              </dd>
+            </div>
+            <div class="row">
+              <dt>提詞器</dt>
+              <dd>
+                <p>載入稿件，在眼鏡顯示器上免持閱讀。</p>
+                <span class="tag">需要有顯示功能的眼鏡，例如 Even G2</span>
+              </dd>
+            </div>
+            <div class="row">
+              <dt>錄音機（Recorder）</dt>
+              <dd>
+                <p>錄下音訊，並在你選擇時匯出成 WAV 檔。</p>
+                <span class="tag">WAV 匯出</span>
+              </dd>
+            </div>
+            <div class="row">
+              <dt>Easy2Say</dt>
+              <dd>
+                <p>協助你在對話中回應，並在支援的裝置上提供 AI 提示。</p>
+                <span class="tag">AI 提示需要 iOS 26 或更新版本，以及 Apple Intelligence</span>
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="local">
+        <div class="column">
+          <h2 id="local">內容留在你的裝置上</h2>
+          <p>
+            即時字幕、翻譯、提詞器、Recorder 的 WAV 匯出檔，以及 Easy2Say 的對話
+            AI，都在本機執行。開發者不會收到你的語音、逐字稿、稿件或錄音。
+          </p>
+          <p>
+            不必建立帳號，Easy2See 也不包含應用程式分析或當機回報服務。詳情請閱讀<a href="/privacy/">隱私權政策</a>。
+          </p>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="credit">
+        <div class="column">
+          <h2 id="credit">建立在 MentraOS 之上</h2>
+          <p>
+            Easy2See 衍生自 <a href="https://github.com/Mentra-Community/MentraOS">MentraOS</a>，這是由 Mentra Labs,
+            Inc. 與 MentraOS 貢獻者所創建的智慧眼鏡開源作業系統、應用程式商店與開發框架。Easy2See
+            以他們的程式碼為起點，從他們的成果繼承了應用程式、眼鏡連線與 miniapp 執行環境。感謝 Mentra Labs
+            與每一位貢獻者。
+          </p>
+          <p class="note">
+            <span class="label">致謝</span>MentraOS 以
+            <a href="https://github.com/Mentra-Community/MentraOS/blob/HEAD/LICENSE">Apache-2.0 授權條款</a
+            >釋出。原始碼與<a href="https://github.com/Mentra-Community/MentraOS/graphs/contributors">貢獻者</a>名單都在
+            <a href="https://github.com/Mentra-Community/MentraOS">GitHub</a> 上。Easy2See
+            是經過獨立修改的分支版本（fork），與 Mentra Labs, Inc. 沒有隸屬關係，也未獲其背書。
+          </p>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="why-fork">
+        <div class="column">
+          <h2 id="why-fork">為什麼要做分支版本（fork）</h2>
+          <p>
+            MentraOS 是通用平台：Mentra App 在你的手機上執行 miniapp，並連上 Mentra
+            的雲端服務。唐鳳的<a href="https://github.com/audreyt/easy2see">分支版本</a>刻意定位得更窄：它是不需要帳號、在裝置上運作的變體，專注於即時字幕、翻譯、提詞器與本機對話
+            AI。
+          </p>
+          <p>
+            它停用了 Mentra 的雲端工作階段與遙測，因此你的語音與逐字稿都留在手機上。它為 Even G2
+            這類有顯示功能的眼鏡而設計，只用手機也能使用即時字幕、翻譯與回顧。
+          </p>
+          <p>
+            如果你想要完整的平台、miniapp 商店或 Mentra 自家的眼鏡，請使用 Mentra App。Mentra Live
+            沒有顯示器，因此無法在 Easy2See 中顯示字幕或提詞器文字。Easy2See 由唐鳳獨立維護；有關它的問題請寄到
+            <a href="mailto:au@civic.ai">au@civic.ai</a>，不要寄給 Mentra。
+          </p>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="help">
+        <div class="column">
+          <h2 id="help">有問題嗎？</h2>
+          <p>
+            設定步驟、需求與聯絡方式都在<a href="/support/">支援頁面</a>，或寄信到
+            <a href="mailto:au@civic.ai">au@civic.ai</a>。
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="column">
+        <p>Easy2See 由唐鳳製作。App Store 版本籌備中。</p>
+        <p>
+          本專案是 Mentra Labs, Inc. 與貢獻者所開發之
+          <a href="https://github.com/Mentra-Community/MentraOS">MentraOS</a> 的<a href="https://github.com/audreyt/easy2see">分支版本</a>，採用
+          <a href="https://github.com/Mentra-Community/MentraOS/blob/HEAD/LICENSE">Apache-2.0 授權條款</a>。
+        </p>
+        <p>
+          <a href="/">首頁</a> &middot; <a href="/support/">支援</a> &middot;
+          <a href="/privacy/">隱私權</a> &middot;
+          <a href="mailto:au@civic.ai">au@civic.ai</a>
+        </p>
+      </div>
+    </footer>
+  </div>
+  </body>
+</html>

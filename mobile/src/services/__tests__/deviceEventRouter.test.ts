@@ -173,7 +173,13 @@ describe("DeviceEventRouter", () => {
       isFinal: true,
       transcribeLanguage: "fr-FR",
     })
-    expect(fwdSpy).toHaveBeenCalledWith("transcription:fr-FR", expect.objectContaining({text: "hello"}), "local")
+    expect(fwdSpy).toHaveBeenCalledWith(
+      "transcription:fr-FR",
+      expect.objectContaining({text: "hello"}),
+      "local",
+      undefined,
+      "sherpa",
+    )
   })
 
   it("drops local_transcription when STT fallback is inactive (cloud STT owns delivery)", () => {

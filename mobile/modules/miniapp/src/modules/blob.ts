@@ -58,8 +58,15 @@ export interface BlobSetOptions {
   mimeType?: string
   name?: string
   meta?: Record<string, string | number | boolean>
+  /**
+   * Ask the host to copy the committed blob into a user-visible folder under
+   * the app's Documents directory (Files app › On My iPhone › <App>) when the
+   * writer closes. The commit result carries `exportedTo` (the file:// URI)
+   * or `exportError` on failure. Hosts that predate this option ignore it —
+   * callers needing a guarantee should follow up with `exportToFiles`.
+   */
+  export?: {folder: string; filename: string}
 }
-
 export interface BlobSetFromUrlOptions extends BlobSetOptions {
   /** Request headers (e.g. an Authorization token) for the download. */
   headers?: Record<string, string>
@@ -236,6 +243,7 @@ export class BlobModule {
       mimeType: opts.mimeType,
       name: opts.name,
       meta: opts.meta,
+      export: opts.export,
     })
     return new BlobWriter(this.session, res.key)
   }
@@ -338,4 +346,33 @@ export class BlobModule {
     })
     return res ?? {success: false}
   }
+
+  /**
+   * Copy a committed blob into a user-visible folder under the app's
+   * Documents directory — on iOS this surfaces in Files › On My iPhone ›
+   * <App> when the build enables file sharing. The host sanitizes the folder
+   * and filename, creates intermediate directories, dedupes on name
+   * collision, and never overwrites an existing file.
+   *
+   * Move semantics by default: the blob is removed from blob storage after a
+   * successful copy so it stops counting against the app's quota. Pass
+   * `keepBlob: true` to retain it.
+   *
+   * Resolves to `{uri, filename}` — `filename` is the deduped name actually
+   * written. Rejects with BLOB_NOT_FOUND / BLOB_WRITE_FAILED /
+   * INVALID_ARGUMENT on failure; nothing pretends success.
+   */
+  async exportToFiles(
+    key: string,
+    opts: {folder: string; filename: string; keepBlob?: boolean},
+  ): Promise<{uri: string; filename: string}> {
+    return this.session.sendRequest<{uri: string; filename: string}>({
+      type: MiniappRequestType.BLOB_EXPORT,
+      key,
+      folder: opts.folder,
+      filename: opts.filename,
+      keepBlob: opts.keepBlob === true,
+    })
+  }
 }
+

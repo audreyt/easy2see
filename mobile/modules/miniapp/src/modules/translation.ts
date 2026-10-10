@@ -25,6 +25,17 @@ import type {TranscriptionLanguage} from "./languages"
 
 export type TranslationHandler = (data: TranslationData) => void
 
+export interface TranslationOptions {
+  /**
+   * Use only the on-device speech+translation pipeline for this listener;
+   * never deliver cloud translations. Other listeners on the same stream
+   * keep their own routing choice. On-device translation keeps script-
+   * specific Chinese targets (zh-TW → Traditional) intact — the cloud
+   * provider collapses them to a single Chinese target.
+   */
+  forceLocal?: boolean
+}
+
 /**
  * Translation source: a registry language, or "auto" to let the cloud detect
  * the spoken language.
@@ -45,11 +56,12 @@ export class TranslationModule {
    * to this subscriber). Prefer `to` or `fromTo` when you know the
    * language(s) you care about.
    */
-  on(handler: TranslationHandler): UnsubscribeFn {
+  on(handler: TranslationHandler, options: TranslationOptions = {}): UnsubscribeFn {
     return this.track(
       this.session._subscribe(
         `${MiniappStreamType.TRANSLATION}:*:*`,
         handler as (data: unknown) => void,
+        options,
       ),
     )
   }
@@ -59,7 +71,11 @@ export class TranslationModule {
    * regardless of source. Useful for "I'm a Spanish speaker, translate
    * whatever I hear to Spanish."
    */
-  to(target: TranscriptionLanguage | TranscriptionLanguage[], handler: TranslationHandler): UnsubscribeFn {
+  to(
+    target: TranscriptionLanguage | TranscriptionLanguage[],
+    handler: TranslationHandler,
+    options: TranslationOptions = {},
+  ): UnsubscribeFn {
     const targets = (Array.isArray(target) ? target : [target]).map((t) =>
       requireTranscriptionLanguage(t, "translation.to(target)"),
     )
@@ -70,6 +86,7 @@ export class TranslationModule {
         this.session._subscribe(
           `${MiniappStreamType.TRANSLATION}:*:${t}`,
           handler as (data: unknown) => void,
+          options,
         ),
       )
     }
@@ -94,6 +111,7 @@ export class TranslationModule {
     source: TranslationSource,
     target: TranscriptionLanguage | TranscriptionLanguage[],
     handler: TranslationHandler,
+    options: TranslationOptions = {},
   ): UnsubscribeFn {
     const validSource =
       source === "auto" ? "auto" : requireTranscriptionLanguage(source, "translation.fromTo(source)")
@@ -107,6 +125,7 @@ export class TranslationModule {
         this.session._subscribe(
           `${MiniappStreamType.TRANSLATION}:${validSource}:${t}`,
           handler as (data: unknown) => void,
+          options,
         ),
       )
     }

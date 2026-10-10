@@ -1,5 +1,13 @@
-@import url("https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
+
+@font-face {
+  /* Bundled (OFL, see fonts/OFL.txt): no network request, same face offline. */
+  font-family: "Red Hat Display";
+  src: url("./fonts/RedHatDisplay-VF.woff2") format("woff2");
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+}
 
 /* Class-based dark mode: `dark:` utilities apply when `<html class="dark">` is
    set (synced from the host color scheme by MentraProvider). */

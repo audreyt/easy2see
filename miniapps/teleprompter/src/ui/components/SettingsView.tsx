@@ -1,4 +1,4 @@
-import {AlignLeft, Gauge, Repeat, Rows3, Timer} from "lucide-react"
+import {AlignLeft, Gauge, Mic, Repeat, Rows3, Timer} from "lucide-react"
 
 import type {LineWidth, TeleprompterSettings} from "../../shared/types"
 import {ACCENT, ACCENT_FG, ACCENT_TEXT} from "../lib/theme"
@@ -10,6 +10,7 @@ interface SettingsViewProps {
   onSetWidth: (width: LineWidth) => void
   onSetAutoRestart: (enabled: boolean) => void
   onSetShowTimecode: (enabled: boolean) => void
+  onSetSaveRecording: (enabled: boolean) => void
 }
 
 export function SettingsView({
@@ -19,6 +20,7 @@ export function SettingsView({
   onSetWidth,
   onSetAutoRestart,
   onSetShowTimecode,
+  onSetSaveRecording,
 }: SettingsViewProps) {
   return (
     <div className="h-full overflow-y-auto px-4 py-5 space-y-5 bg-zinc-100 dark:bg-zinc-950 scrollbar-hide">
@@ -98,6 +100,14 @@ export function SettingsView({
           description="Add a m:ss progress line beneath your script on the display."
           checked={settings.showTimecode}
           onChange={onSetShowTimecode}
+        />
+        <Divider />
+        <ToggleRow
+          icon={<Mic className="w-5 h-5" />}
+          label="Save recording when session ends"
+          description="Keep the audio and a timestamped transcript of each read in Files › Recordings."
+          checked={settings.saveRecording}
+          onChange={onSetSaveRecording}
         />
       </Section>
     </div>

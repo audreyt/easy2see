@@ -12,10 +12,13 @@ import fr from "./fr"
 import hi from "./hi"
 import ja from "./ja"
 import ko from "./ko"
+import {withEasy2SeeProductName} from "./easy2see"
+import {isEasy2SeeBuild} from "@/services/deployment/officialManifest"
 
 const systemLocales = Localization.getLocales()
 
-const resources = {ar, en, ko, es, fr, ja, hi}
+// The Easy2See build names itself where stock strings name the Mentra App.
+const resources = {ar, en: isEasy2SeeBuild() ? withEasy2SeeProductName(en) : en, ko, es, fr, ja, hi}
 const supportedTags = Object.keys(resources)
 
 // Checks to see if the device locale matches any of the supported locales

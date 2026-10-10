@@ -40,7 +40,7 @@ mock.module("../audioPlaybackAssets", () => ({
   SILENT_AUDIO_SOURCE: silentAudioSource,
 }))
 
-reactNative.Platform = {OS: "android"}
+Object.assign(reactNative.Platform as object, {OS: "android"})
 reactNativeAppState.currentState = "active"
 
 mock.module("../../utils/timers", () => ({

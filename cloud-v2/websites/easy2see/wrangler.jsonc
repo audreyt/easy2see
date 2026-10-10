@@ -1,0 +1,15 @@
+{
+  "name": "easy2see-site",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "assets": {
+    "directory": "./",
+    "html_handling": "auto-trailing-slash",
+  },
+  "routes": [
+    {
+      "pattern": "easy2see.app",
+      "custom_domain": true,
+    },
+  ],
+}

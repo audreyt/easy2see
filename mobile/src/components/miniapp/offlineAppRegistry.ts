@@ -18,6 +18,7 @@ import GallerySettingsScreen from "@/app/asg/gallery-settings"
 import DeveloperUrlScreen from "@/app/miniapps/miniappdev/developer-url"
 import ScannerScreen from "@/app/miniapps/miniappdev/scanner"
 import MirrorScreen from "@/app/miniapps/mirror/mirror"
+import AboutEasy2SeeScreen from "@/app/miniapps/settings/about"
 import AppearanceSettings from "@/app/miniapps/settings/appearance"
 import CameraSettings from "@/app/miniapps/settings/camera"
 import ChangeEmailScreen from "@/app/miniapps/settings/change-email"
@@ -51,6 +52,7 @@ export interface OfflineAppDef {
 
 const settingsRoutes: Record<string, ComponentType<any>> = {
   "/miniapps/settings/main": MainSettings,
+  "/miniapps/settings/about": AboutEasy2SeeScreen,
   "/miniapps/settings/appearance": AppearanceSettings,
   "/miniapps/settings/camera": CameraSettings,
   "/miniapps/settings/change-email": ChangeEmailScreen,

@@ -1,89 +1,43 @@
-export interface Language {
-  code: string
-  name: string
-  nativeName?: string
-  flag: string
-}
+/**
+ * UI-side language helpers. The table itself lives in shared/languages.ts so
+ * the background JSContext can route the no-speech hint and sanitize stored
+ * settings against the same list the picker shows.
+ *
+ * Only languages that can run ON-DEVICE are listed: the six downloadable
+ * Sherpa models plus the Apple on-device speech locales. The cloud app's
+ * 60-language picker is gone — an entry with no local route would produce a
+ * silent, frozen caption screen.
+ */
 
-export const AVAILABLE_LANGUAGES: Language[] = [
-  { code: "af", name: "Afrikaans", nativeName: "Afrikaans", flag: "🇿🇦" },
-  { code: "sq", name: "Albanian", nativeName: "Shqip", flag: "🇦🇱" },
-  { code: "ar", name: "Arabic", nativeName: "العربية", flag: "🇸🇦" },
-  { code: "az", name: "Azerbaijani", nativeName: "Azərbaycan", flag: "🇦🇿" },
-  { code: "eu", name: "Basque", nativeName: "Euskara", flag: "🇪🇸" },
-  { code: "be", name: "Belarusian", nativeName: "Беларуская", flag: "🇧🇾" },
-  { code: "bn", name: "Bengali", nativeName: "বাংলা", flag: "🇧🇩" },
-  { code: "bs", name: "Bosnian", nativeName: "Bosanski", flag: "🇧🇦" },
-  { code: "bg", name: "Bulgarian", nativeName: "Български", flag: "🇧🇬" },
-  { code: "ca", name: "Catalan", nativeName: "Català", flag: "🇪🇸" },
-  { code: "zh", name: "Chinese", nativeName: "中文", flag: "🇨🇳" },
-  { code: "hr", name: "Croatian", nativeName: "Hrvatski", flag: "🇭🇷" },
-  { code: "cs", name: "Czech", nativeName: "Čeština", flag: "🇨🇿" },
-  { code: "da", name: "Danish", nativeName: "Dansk", flag: "🇩🇰" },
-  { code: "nl", name: "Dutch", nativeName: "Nederlands", flag: "🇳🇱" },
-  { code: "en", name: "English", nativeName: "English", flag: "🇺🇸" },
-  { code: "et", name: "Estonian", nativeName: "Eesti", flag: "🇪🇪" },
-  { code: "fi", name: "Finnish", nativeName: "Suomi", flag: "🇫🇮" },
-  { code: "fr", name: "French", nativeName: "Français", flag: "🇫🇷" },
-  { code: "gl", name: "Galician", nativeName: "Galego", flag: "🇪🇸" },
-  { code: "de", name: "German", nativeName: "Deutsch", flag: "🇩🇪" },
-  { code: "el", name: "Greek", nativeName: "Ελληνικά", flag: "🇬🇷" },
-  { code: "gu", name: "Gujarati", nativeName: "ગુજરાતી", flag: "🇮🇳" },
-  { code: "he", name: "Hebrew", nativeName: "עברית", flag: "🇮🇱" },
-  { code: "hi", name: "Hindi", nativeName: "हिन्दी", flag: "🇮🇳" },
-  { code: "hu", name: "Hungarian", nativeName: "Magyar", flag: "🇭🇺" },
-  { code: "id", name: "Indonesian", nativeName: "Bahasa Indonesia", flag: "🇮🇩" },
-  { code: "it", name: "Italian", nativeName: "Italiano", flag: "🇮🇹" },
-  { code: "ja", name: "Japanese", nativeName: "日本語", flag: "🇯🇵" },
-  { code: "kn", name: "Kannada", nativeName: "ಕನ್ನಡ", flag: "🇮🇳" },
-  { code: "kk", name: "Kazakh", nativeName: "Қазақ тілі", flag: "🇰🇿" },
-  { code: "ko", name: "Korean", nativeName: "한국어", flag: "🇰🇷" },
-  { code: "lv", name: "Latvian", nativeName: "Latviešu", flag: "🇱🇻" },
-  { code: "lt", name: "Lithuanian", nativeName: "Lietuvių", flag: "🇱🇹" },
-  { code: "mk", name: "Macedonian", nativeName: "Македонски", flag: "🇲🇰" },
-  { code: "ms", name: "Malay", nativeName: "Bahasa Melayu", flag: "🇲🇾" },
-  { code: "ml", name: "Malayalam", nativeName: "മലയാളം", flag: "🇮🇳" },
-  { code: "mr", name: "Marathi", nativeName: "मराठी", flag: "🇮🇳" },
-  { code: "no", name: "Norwegian", nativeName: "Norsk", flag: "🇳🇴" },
-  { code: "fa", name: "Persian", nativeName: "فارسی", flag: "🇮🇷" },
-  { code: "pl", name: "Polish", nativeName: "Polski", flag: "🇵🇱" },
-  { code: "pt", name: "Portuguese", nativeName: "Português", flag: "🇵🇹" },
-  { code: "pa", name: "Punjabi", nativeName: "ਪੰਜਾਬੀ", flag: "🇮🇳" },
-  { code: "ro", name: "Romanian", nativeName: "Română", flag: "🇷🇴" },
-  { code: "ru", name: "Russian", nativeName: "Русский", flag: "🇷🇺" },
-  { code: "sr", name: "Serbian", nativeName: "Српски", flag: "🇷🇸" },
-  { code: "sk", name: "Slovak", nativeName: "Slovenčina", flag: "🇸🇰" },
-  { code: "sl", name: "Slovenian", nativeName: "Slovenščina", flag: "🇸🇮" },
-  { code: "es", name: "Spanish", nativeName: "Español", flag: "🇪🇸" },
-  { code: "sw", name: "Swahili", nativeName: "Kiswahili", flag: "🇰🇪" },
-  { code: "sv", name: "Swedish", nativeName: "Svenska", flag: "🇸🇪" },
-  { code: "tl", name: "Tagalog", nativeName: "Tagalog", flag: "🇵🇭" },
-  { code: "ta", name: "Tamil", nativeName: "தமிழ்", flag: "🇮🇳" },
-  { code: "te", name: "Telugu", nativeName: "తెలుగు", flag: "🇮🇳" },
-  { code: "th", name: "Thai", nativeName: "ไทย", flag: "🇹🇭" },
-  { code: "tr", name: "Turkish", nativeName: "Türkçe", flag: "🇹🇷" },
-  { code: "uk", name: "Ukrainian", nativeName: "Українська", flag: "🇺🇦" },
-  { code: "ur", name: "Urdu", nativeName: "اردو", flag: "🇵🇰" },
-  { code: "vi", name: "Vietnamese", nativeName: "Tiếng Việt", flag: "🇻🇳" },
-  { code: "cy", name: "Welsh", nativeName: "Cymraeg", flag: "🏴󠁧󠁢󠁷󠁬󠁳󠁿" },
-]
+import {chineseScript, LOCAL_LANGUAGES, type LocalLanguage} from "../../shared/languages"
+
+export {chineseScript, engineFor, isLocalLanguageTag, LOCAL_LANGUAGES, toLocalLanguageTag} from "../../shared/languages"
+export type {LocalLanguage, LocalSpeechEngine} from "../../shared/languages"
+
+export type Language = LocalLanguage
+
+/**
+ * Look up a language by code. Exact tag match first ("zh-TW" -> Traditional),
+ * then a script-aware Chinese check so Traditional-script tags the picker
+ * doesn't list verbatim ("zh-MO", "zh-Hant") still resolve to the Traditional
+ * entry, then the primary subtag so canonicalized tags ("es" -> "es-ES",
+ * stored "zh" -> Simplified) resolve to a flag and name instead of falling
+ * back to the raw code + white flag.
+ */
+function findLanguage(code: string): LocalLanguage | undefined {
+  const tag = (code ?? "").toLowerCase()
+  const exact = LOCAL_LANGUAGES.find((l) => l.code.toLowerCase() === tag)
+  if (exact) return exact
+  const script = chineseScript(code)
+  if (script) return LOCAL_LANGUAGES.find((l) => chineseScript(l.code) === script)
+  const primary = tag.split("-")[0]
+  return LOCAL_LANGUAGES.find((l) => l.code.split("-")[0].toLowerCase() === primary)
+}
 
 export function getLanguageName(code: string): string {
-  return AVAILABLE_LANGUAGES.find((l) => l.code === code)?.name || code
-}
-
-export function searchLanguages(query: string): Language[] {
-  const lowerQuery = query.toLowerCase()
-  return AVAILABLE_LANGUAGES.filter(
-    (l) => l.name.toLowerCase().includes(lowerQuery) || l.code.toLowerCase().includes(lowerQuery),
-  )
-}
-
-export function getAvailableHints(primaryLanguage: string): Language[] {
-  // Return all languages except the primary language for use as hints
-  return AVAILABLE_LANGUAGES.filter((l) => l.code !== primaryLanguage)
+  return findLanguage(code)?.name || code
 }
 
 export function getFlagEmoji(code: string): string {
-  return AVAILABLE_LANGUAGES.find((l) => l.code === code)?.flag || "🏳️"
+  return findLanguage(code)?.flag || "🏳️"
 }

@@ -4,7 +4,7 @@ import {useLocalSearchParams} from "expo-router"
 import {useCallback, useEffect, useMemo, useRef, useState} from "react"
 import {ActivityIndicator, Image, Platform, ScrollView, View} from "react-native"
 
-import {MentraLogoStandalone} from "@/components/brands/MentraLogoStandalone"
+import {AppMark} from "@/components/brands/AppMark"
 import {Button, Header, Screen, Text} from "@/components/ignite"
 import GlassesTroubleshootingModal from "@/components/glasses/GlassesTroubleshootingModal"
 import {DiscoveredGlassesRow} from "@/components/pairing/DiscoveredGlassesRow"
@@ -390,7 +390,7 @@ function GlassesScanScreen() {
 
   return (
     <Screen preset="fixed" safeAreaEdges={["bottom"]} extraAndroidInsets>
-      <Header leftIcon="chevron-left" onLeftPress={handleBackOut} RightActionComponent={<MentraLogoStandalone />} />
+      <Header leftIcon="chevron-left" onLeftPress={handleBackOut} RightActionComponent={<AppMark />} />
       <View className="flex-1 justify-center">
         <GlassView className="gap-6 rounded-3xl p-6 bg-primary-foreground" transparent={false}>
           <Image source={selectedImage} className="h-[90px] w-[156px] mx-auto" resizeMode="contain" />

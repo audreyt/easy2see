@@ -10,8 +10,8 @@
  * typed session.ui channel bus (see shared/channels.ts).
  *
  * The single-bundle proof this replaced did `transcription.on -> showTextWall`
- * inline; the real captions logic (history, speaker labels, char-level wrapping,
- * 40s inactivity clear, settings) now lives in CaptionsController.
+ * inline; the real captions logic (history, char-level wrapping, 40s
+ * inactivity clear, settings) now lives in CaptionsController.
  */
 
 import {registerMiniapp} from "@mentra/miniapp/background"

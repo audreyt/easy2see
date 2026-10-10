@@ -43,6 +43,7 @@ import {showAlert} from "@/utils/AlertUtils"
 import {translate} from "@/i18n"
 import {Buffer} from "@craftzdog/react-native-buffer"
 import {createDeploymentAuthProvider, deploymentStore} from "@/services/deployment"
+import {getLocalUserId} from "@/services/deployment/localIdentity"
 
 /**
  * Miniapp bundles shipped inside the app binary, installed on first launch by
@@ -411,9 +412,17 @@ class MantleManager {
     // start the runtime. The remaining work below is Mentra-app UI/v1-cloud
     // startup, not an island configuration seam.
     const deployment = deploymentStore.getActive()
+    const isLocalAuth = deployment.manifest.auth.mode === "local"
     const workspaceAuth = deployment.kind === "workspace" ? createDeploymentAuthProvider(deployment) : null
     engine.configure({
-      auth: workspaceAuth
+      auth: isLocalAuth
+        ? {
+            // Local mode (Easy2See): no subject token — there is no Core to
+            // exchange one with. The stable device-local id namespaces miniapp
+            // storage; it is generated on-device and never leaves the phone.
+            getUserId: () => getLocalUserId(),
+          }
+        : workspaceAuth
         ? {
             getMeetingAccount: async () => {
               const session = await workspaceAuth.getSession()
@@ -577,8 +586,7 @@ class MantleManager {
     // exists on V1 and authenticated with a token the app no longer mints.
     // Settings are local-first until a V2 sync lands (tracked in the ripout
     // issue; island's per-change server write is the island-side cleanup).
-
-    if (deployment.kind === "consumer") {
+    if (deployment.kind === "consumer" && !isLocalAuth) {
       const userRes = await mentraAuth.getUser()
       this.assertInitializationCurrent(miniappGeneration)
       if (userRes.is_ok()) {
@@ -733,7 +741,11 @@ class MantleManager {
     // Then reconcile the admin-managed preinstall registry from Cloud V2. This
     // lets Core move users to newer bundled miniapp releases without shipping a
     // new mobile binary.
-    if (!background && deploymentStore.getActive().kind === "consumer") {
+    if (
+      !background &&
+      deploymentStore.getActive().kind === "consumer" &&
+      deploymentStore.getActive().manifest.auth.mode !== "local"
+    ) {
       await preinstalledMiniappSync.sync()
       if (!isCurrent()) return
     }

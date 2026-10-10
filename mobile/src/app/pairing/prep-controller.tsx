@@ -3,7 +3,7 @@ import {useRoute} from "@react-navigation/native"
 import {Linking, PermissionsAndroid, Image, Platform, ScrollView, View} from "react-native"
 import type {Permission} from "react-native"
 
-import {MentraLogoStandalone} from "@/components/brands/MentraLogoStandalone"
+import {AppMark} from "@/components/brands/AppMark"
 import {Button, Header, Screen, Text} from "@/components/ignite"
 import {useAppTheme} from "@/contexts/ThemeContext"
 import {useNavigationStore} from "@/stores/navigation"
@@ -250,12 +250,7 @@ export default function PairingPrepScreen() {
 
   return (
     <Screen preset="fixed" safeAreaEdges={["bottom"]} extraAndroidInsets>
-      <Header
-        title={deviceModel}
-        leftIcon="chevron-left"
-        onLeftPress={goBack}
-        RightActionComponent={<MentraLogoStandalone />}
-      />
+      <Header title={deviceModel} leftIcon="chevron-left" onLeftPress={goBack} RightActionComponent={<AppMark />} />
       {renderGuide()}
       {renderButtons()}
     </Screen>

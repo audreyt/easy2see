@@ -15,9 +15,17 @@ export const reactNativeAppState = {
   addEventListener: () => ({remove: () => {}}),
 }
 
+/**
+ * ONE Platform object for the whole process. Coordinators destructure
+ * `Platform` at import, and bun links it once, so suites must MUTATE this
+ * object (`reactNativePlatform.OS = "android"`) rather than assign a new one —
+ * a later file's replacement would never reach a module loaded earlier.
+ */
+export const reactNativePlatform: {OS: string; Version: string | number} = {OS: "android", Version: 30}
+
 export const reactNative: Record<string, unknown> = {
   AppState: reactNativeAppState,
-  Platform: {OS: "android", Version: 30},
+  Platform: reactNativePlatform,
   Alert: {alert: mock(() => {})},
   Linking: {openSettings: mock(async () => {})},
   PermissionsAndroid: {

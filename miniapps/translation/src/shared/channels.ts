@@ -18,6 +18,7 @@ import type {
   CloudClientStatus,
   DisplayPreview,
   LiveTranslation,
+  RecordingNotice,
   TranslationEntry,
 } from "./types"
 
@@ -36,6 +37,8 @@ export interface Channels {
   "translation:settings-update": TranslationSettings
   /** Phone-owned cloud-client status update. */
   "translation:cloud-status": CloudClientStatus
+  /** Recording lifecycle notice (recording / saved / error). */
+  "translation:recording": RecordingNotice
 
   // ── UI → background ────────────────────────────────────────────────────
 
@@ -45,6 +48,7 @@ export interface Channels {
   "translation:set-word-breaking": {enabled: boolean}
   "translation:set-show-original-text": {enabled: boolean}
   "translation:set-glasses-display-mode": {mode: import("./types").GlassesDisplayMode}
+  "translation:set-save-recording": {enabled: boolean}
   "translation:clear": Record<string, never>
   /** Explicit hydration request after the WebView has registered listeners. */
   "translation:request-snapshot": Record<string, never>

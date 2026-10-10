@@ -48,6 +48,15 @@ export interface TranscriptionData {
   text: string
   isFinal: boolean
   language?: string
+  /** Which on-device engine produced this event (forceLocal listeners only). */
+  provider?: "apple-speech" | "sherpa"
+  /**
+   * Contract A: the requested on-device engine cannot serve this stream —
+   * e.g. `engine: "apple"` on Android, or no on-device recognizer. `text` is
+   * empty; `unavailableReason` carries the native verdict. Never a cloud hop.
+   */
+  unavailable?: boolean
+  unavailableReason?: string
 }
 
 export interface TranslationData {
@@ -181,6 +190,8 @@ export class EventManager {
   private readonly refCounts = new Map<string, number>()
   /** Transcription stream -> refs that require on-device-only processing. */
   private readonly forceLocalRefCounts = new Map<string, number>()
+  /** Transcription stream -> requested on-device engine -> ref count (Contract A). */
+  private readonly engineRefCounts = new Map<string, Map<"auto" | "sherpa" | "apple", number>>()
 
   constructor(private readonly session: MiniappSession) {}
 
@@ -196,17 +207,28 @@ export class EventManager {
    * via a separate envelope `type`; the EventManager only routes them
    * locally.
    */
-  subscribe(stream: string, handler: (data: unknown) => void, options: {forceLocal?: boolean} = {}): UnsubscribeFn {
+  subscribe(
+    stream: string,
+    handler: (data: unknown) => void,
+    options: {forceLocal?: boolean; engine?: "auto" | "sherpa" | "apple"} = {},
+  ): UnsubscribeFn {
     const isInternal = stream.startsWith("_")
-    const forceLocal = options.forceLocal === true && stream.startsWith(`${MiniappStreamType.TRANSCRIPTION}:`)
+    const isSpeechStream =
+      stream.startsWith(`${MiniappStreamType.TRANSCRIPTION}:`) || stream.startsWith(`${MiniappStreamType.TRANSLATION}:`)
+    const forceLocal = options.forceLocal === true && isSpeechStream
+    const engine =
+      stream.startsWith(`${MiniappStreamType.TRANSCRIPTION}:`) &&
+      (options.engine === "sherpa" || options.engine === "apple")
+        ? options.engine
+        : "auto"
     const isTranscription = stream.startsWith(`${MiniappStreamType.TRANSCRIPTION}:`)
     const listenerId = isTranscription ? `${this.listenerScope}:${++this.listenerSeq}` : undefined
     let active = true
     const listener = (data: unknown, route?: TranscriptionEventRoute) => {
       if (!active) return
-      if (stream.startsWith(`${MiniappStreamType.TRANSCRIPTION}:`)) {
-        // Hosts that predate routed transcription events omit `route`. Treat
-        // those events as the default/cloud path so a forceLocal listener can
+      if (isSpeechStream) {
+        // Hosts that predate routed speech events omit `route`. Treat those
+        // events as the default/cloud path so a forceLocal listener can
         // never accidentally receive cloud text.
         if (forceLocal ? route !== "forceLocal" && route !== "all" : route === "forceLocal") return
       }
@@ -218,6 +240,17 @@ export class EventManager {
     }
     this.retireListeners.add(retire)
     if (listenerId) this.transcriptionListeners.set(listenerId, {stream, forceLocal, invoke: listener})
+    let engineWinnerChanged = false
+    if (forceLocal) {
+      const engines = this.engineRefCounts.get(stream) ?? new Map()
+      const winnerBefore =
+        (engines.get("apple") ?? 0) > 0 ? "apple" : (engines.get("sherpa") ?? 0) > 0 ? "sherpa" : "auto"
+      engines.set(engine, (engines.get(engine) ?? 0) + 1)
+      this.engineRefCounts.set(stream, engines)
+      const winnerAfter =
+        (engines.get("apple") ?? 0) > 0 ? "apple" : (engines.get("sherpa") ?? 0) > 0 ? "sherpa" : "auto"
+      engineWinnerChanged = winnerBefore !== winnerAfter
+    }
     if (!isInternal) {
       const before = this.refCounts.get(stream) ?? 0
       this.refCounts.set(stream, before + 1)
@@ -228,7 +261,8 @@ export class EventManager {
         isTranscription ||
         before === 0 ||
         (forceLocal && forceLocalBefore === 0) ||
-        (!forceLocal && defaultBefore === 0)
+        (!forceLocal && defaultBefore === 0) ||
+        engineWinnerChanged
       ) {
         this.sendSubscriptionUpdate()
       }
@@ -255,6 +289,21 @@ export class EventManager {
         } else {
           this.forceLocalRefCounts.set(stream, forceLocalCurrent - 1)
         }
+        const engines = this.engineRefCounts.get(stream)
+        if (engines) {
+          // Winning-engine check before decrementing: removing the last
+          // "apple" ref while "sherpa" refs remain changes the engine the
+          // host must route — that is a subscription change too.
+          const winnerBefore =
+            (engines.get("apple") ?? 0) > 0 ? "apple" : (engines.get("sherpa") ?? 0) > 0 ? "sherpa" : "auto"
+          const count = (engines.get(engine) ?? 0) - 1
+          if (count <= 0) engines.delete(engine)
+          else engines.set(engine, count)
+          if (engines.size === 0) this.engineRefCounts.delete(stream)
+          const winnerAfter =
+            (engines.get("apple") ?? 0) > 0 ? "apple" : (engines.get("sherpa") ?? 0) > 0 ? "sherpa" : "auto"
+          if (winnerBefore !== winnerAfter) subscriptionChanged = true
+        }
       } else if (current - forceLocalCurrent <= 1) {
         subscriptionChanged = true
       }
@@ -270,6 +319,7 @@ export class EventManager {
     this.emitter.removeAllListeners()
     this.refCounts.clear()
     this.forceLocalRefCounts.clear()
+    this.engineRefCounts.clear()
     this.sendSubscriptionUpdate()
   }
 
@@ -312,7 +362,7 @@ export class EventManager {
       }
       patterns.delete(stream) // exact key already emitted above
       for (const pattern of patterns) {
-        this.emitter.emit(pattern, data)
+        this.emitter.emit(pattern, data, transcriptionRoute)
       }
     }
   }
@@ -325,9 +375,16 @@ export class EventManager {
       if (forceLocalRefs === 0) return stream
 
       const totalRefs = this.refCounts.get(stream) ?? 0
+      // Contract A: the winning engine across forceLocal listeners —
+      // "apple" outranks "sherpa" outranks "auto" so an explicit request is
+      // never silently diluted by a default listener on the same stream.
+      const engines = this.engineRefCounts.get(stream)
+      const engine =
+        (engines?.get("apple") ?? 0) > 0 ? "apple" : (engines?.get("sherpa") ?? 0) > 0 ? "sherpa" : "auto"
       return {
         stream,
         forceLocal: true,
+        engine,
         ...(totalRefs > forceLocalRefs ? {includeCloud: true} : {}),
       }
     })

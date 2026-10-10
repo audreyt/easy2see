@@ -8,7 +8,7 @@
  * `session.ui.send`); the teleprompter UI never needs request/response RPC.
  */
 
-import type {LineWidth, PlaybackStatus, TeleprompterSettings, TeleprompterSnapshot} from "./types"
+import type {LineWidth, PlaybackStatus, RecordingNotice, TeleprompterSettings, TeleprompterSnapshot} from "./types"
 
 export interface Channels {
   // ── background → UI ────────────────────────────────────────────────────
@@ -19,6 +19,8 @@ export interface Channels {
   "tp:status": PlaybackStatus
   /** Settings update echo (after a persisted change). */
   "tp:settings-update": TeleprompterSettings
+  /** Recording lifecycle notice (recording / saved / error). */
+  "tp:recording": RecordingNotice
 
   // ── UI → background ────────────────────────────────────────────────────
 
@@ -30,6 +32,7 @@ export interface Channels {
   "tp:set-voice-follow": {enabled: boolean}
   "tp:set-auto-restart": {enabled: boolean}
   "tp:set-show-timecode": {enabled: boolean}
+  "tp:set-save-recording": {enabled: boolean}
 
   /** Transport controls. */
   "tp:play": Record<string, never>

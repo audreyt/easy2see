@@ -104,6 +104,43 @@ export type LocalTranscriptionEvent = {
   text: string
   isFinal?: boolean
   transcribeLanguage?: string
+  /** "sherpa-onnx" (Sherpa lane) or "apple-speech" (Contract A Apple Speech lane). */
+  provider?: string
+  utteranceId?: string
+}
+
+/**
+ * Reported by the transcribe-only Apple Speech pipeline (Contract A) when
+ * every lane gave up — `reason` carries the failure class. JS reconciles the
+ * affected streams to Sherpa or reports them unavailable to miniapps.
+ */
+export type LocalTranscriptionUnavailableEvent = {
+  reason: string
+}
+
+/**
+ * On-device Apple Speech+Translation result (the Easy2Say stack). `text` is
+ * the translated text in `targetLanguage`; `originalText` is the recognized
+ * source-language text when the pipeline surfaces it.
+ */
+export type LocalTranslationEvent = {
+  text: string
+  isFinal?: boolean
+  sourceLanguage?: string
+  targetLanguage?: string
+  originalText?: string
+  utteranceId?: string
+}
+
+/**
+ * The on-device translation pipeline reported it cannot serve the active
+ * pairs after activation: TranslationSession.prepareTranslation or
+ * translate threw, or no session arrived within the wait window. `reason`
+ * carries the probe verdict that let the hop activate (e.g.
+ * "needs-download"). JS reconciles the pair onto the cloud subscription set.
+ */
+export type LocalTranslationUnavailableEvent = {
+  reason: string
 }
 
 export type LogEvent = {
@@ -1136,7 +1173,10 @@ export type BluetoothSdkModuleEvents = {
   voice_activity_detection_status: (event: VoiceActivityDetectionStatusEvent) => void
   speaking_status: (event: SpeakingStatusEvent) => void
   battery_status: (event: BatteryStatusEvent) => void
+  local_transcription_unavailable: (event: LocalTranscriptionUnavailableEvent) => void
   local_transcription: (event: LocalTranscriptionEvent) => void
+  local_translation: (event: LocalTranslationEvent) => void
+  local_translation_unavailable: (event: LocalTranslationUnavailableEvent) => void
   native_notification_status: (event: NativeNotificationStatus) => void
   native_notification_delivery: (event: NativeNotificationDelivery) => void
   phone_notification: (event: PhoneNotificationEvent) => void
@@ -1306,7 +1346,10 @@ export type BluetoothSdkEventMap = {
   voice_activity_detection_status: VoiceActivityDetectionStatusEvent
   speaking_status: SpeakingStatusEvent
   battery_status: BatteryStatusEvent
+  local_transcription_unavailable: LocalTranscriptionUnavailableEvent
   local_transcription: LocalTranscriptionEvent
+  local_translation: LocalTranslationEvent
+  local_translation_unavailable: LocalTranslationUnavailableEvent
   wifi_status_change: WifiStatusChangeEvent
   wifi_scan_result: WifiScanResultEvent
   wifi_forget_result: WifiForgetResultEvent
@@ -1835,3 +1878,50 @@ export type BluetoothSettingsUpdate = Partial<{
   controller_device_name: string
   controller_address: string
 }>
+
+// ---------------------------------------------------------------------------
+// On-device language model (session.llm) — Apple Foundation Models, iOS 26+.
+// ---------------------------------------------------------------------------
+
+/** Why the on-device model cannot serve requests right now. */
+export type LlmUnavailableReason =
+  | "unsupported-os"
+  | "device-not-eligible"
+  | "apple-intelligence-not-enabled"
+  | "model-not-ready"
+  | "unknown"
+
+export interface LlmAvailabilityResult {
+  available: boolean
+  reason?: LlmUnavailableReason
+  /** Model context window in tokens (4096 on iOS 26, 8192 on some macOS). */
+  contextSize?: number
+  /** BCP-47 tags preserving script (zh-Hant-TW, zh-Hans-CN). */
+  supportedLanguages?: string[]
+}
+
+export interface LlmGenerateNativeRequest {
+  /** Correlates llmCancel; the host supplies one when the miniapp omits it. */
+  requestId: string
+  instructions: string
+  prompt: string
+  /** JSON-Schema subset for guided generation (DynamicGenerationSchema). */
+  schema?: unknown
+  maxTokens?: number
+  temperature?: number
+}
+
+/**
+ * Result envelope — native never throws for model errors so the host maps
+ * codes deterministically. `code` is one of the LLM_* contract codes,
+ * LLM_INVALID_SCHEMA (host maps to INVALID_ARGUMENT), or INTERNAL.
+ */
+export interface LlmGenerateNativeResult {
+  ok: boolean
+  text?: string
+  json?: unknown
+  elapsedMs: number
+  code?: string
+  reason?: LlmUnavailableReason
+  message?: string
+}

@@ -4,7 +4,7 @@ import {useLocalSearchParams} from "expo-router"
 import {useEffect, useState} from "react"
 import {ActivityIndicator, Image, Platform, ScrollView, TouchableOpacity, View} from "react-native"
 
-import {MentraLogoStandalone} from "@/components/brands/MentraLogoStandalone"
+import {AppMark} from "@/components/brands/AppMark"
 import {Icon, Button, Header, Screen, Text} from "@/components/ignite"
 import GlassesTroubleshootingModal from "@/components/glasses/GlassesTroubleshootingModal"
 import Divider from "@/components/ui/Divider"
@@ -114,7 +114,7 @@ export default function SelectGlassesBluetoothScreen() {
 
   return (
     <Screen preset="fixed" safeAreaEdges={["bottom"]} extraAndroidInsets>
-      <Header leftIcon="chevron-left" onLeftPress={goBack} RightActionComponent={<MentraLogoStandalone />} />
+      <Header leftIcon="chevron-left" onLeftPress={goBack} RightActionComponent={<AppMark />} />
       <View className="flex-1 justify-center">
         <GlassView className="gap-6 rounded-3xl bg-primary-foreground p-6">
           <Image source={getGlassesOpenImage(deviceModel)} className="h-[90px] w-full" resizeMode="contain" />

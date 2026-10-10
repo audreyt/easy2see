@@ -34,6 +34,8 @@ import {Directory, File, Paths, type FileHandle} from "expo-file-system"
 import {MiniappErrorCode} from "@mentra/miniapp"
 import {storage as mmkvStorage} from "../utils/storage/storage"
 import {sanitizeSegment, shareFileName, withDiskExt} from "./blobPaths"
+import {copyIntoDir, exportDirFor, sanitizeExportFilename} from "./blobExport"
+import {internalStorageDir, migrateDocumentsDirToAppSupport} from "./appPaths"
 
 const LOG_TAG = "LocalMiniappRuntime"
 
@@ -94,6 +96,8 @@ interface ActiveUpload {
   mimeType: string
   meta?: Record<string, string | number | boolean>
   createdAt: number
+  /** Create-time request to copy the committed blob into Documents/<folder>/<filename>. */
+  exportHint?: {folder: string; filename: string}
 }
 
 interface ActiveReader {
@@ -121,8 +125,13 @@ export class BlobStore {
   }
 
   private dirFor(packageName: string): Directory {
+    // EASY2SEE: blobs live under Library/Application Support so the
+    // Files-visible Documents dir holds only user-meaningful exports.
+    // migrateDocumentsDirToAppSupport is a one-time, fail-safe move for
+    // installs that predate the relocation.
+    migrateDocumentsDirToAppSupport(ROOT_DIR_NAME)
     const dir = new Directory(
-      Paths.document,
+      internalStorageDir(),
       ROOT_DIR_NAME,
       sanitizeSegment(this.currentIdentity(packageName).userId),
       sanitizeSegment(packageName),
@@ -290,6 +299,12 @@ export class BlobStore {
         mimeType: typeof payload.mimeType === "string" ? payload.mimeType : "application/octet-stream",
         meta: (payload.meta as Record<string, string | number | boolean>) ?? undefined,
         createdAt: Date.now(),
+        exportHint: (() => {
+          const e = payload.export as {folder?: unknown; filename?: unknown} | undefined
+          return e && typeof e.folder === "string" && typeof e.filename === "string"
+            ? {folder: e.folder, filename: e.filename}
+            : undefined
+        })(),
       })
       this.hooks.sendResult(packageName, requestId, true, {key})
     } catch (err) {
@@ -363,12 +378,73 @@ export class BlobStore {
       }
       const meta = this.commitFile(packageName, key, up.fileName, up.mimeType, up.name, extraMeta)
       this.uploads.delete(mapKey)
+      // Create-time export hint: copy into Documents/<folder>/<filename> and
+      // annotate the commit result. Export failure never fails the commit —
+      // the blob is still stored and exportToFiles can be retried.
+      if (up.exportHint) {
+        try {
+          const out = this.exportCommitted(packageName, key, up.exportHint, false)
+          ;(meta as Record<string, unknown>).exportedTo = out.uri
+        } catch (err) {
+          ;(meta as Record<string, unknown>).exportError = err instanceof Error ? err.message : String(err)
+        }
+      }
       this.hooks.sendResult(packageName, requestId, true, meta)
     } catch (err) {
       this.discardUpload(up)
       this.uploads.delete(mapKey)
       this.fail(packageName, requestId, MiniappErrorCode.BLOB_WRITE_FAILED, err)
     }
+  }
+
+  /**
+   * BLOB_EXPORT — copy a committed blob into Documents/<folder>/<filename>
+   * (Files-visible). Move semantics unless keepBlob: the source blob is
+   * deleted after a successful copy. Never overwrites; dedupes the name.
+   */
+  handleExport(packageName: string, payload: Record<string, unknown>, requestId?: string): void {
+    const key = payload.key as string
+    const folder = payload.folder as string
+    const filename = payload.filename as string
+    const keepBlob = payload.keepBlob === true
+    if (typeof key !== "string" || !key || typeof folder !== "string" || !folder || typeof filename !== "string" || !filename) {
+      this.hooks.sendResult(packageName, requestId, false, undefined, {
+        code: MiniappErrorCode.INVALID_ARGUMENT,
+        message: "blob.exportToFiles requires key, folder and filename strings",
+      })
+      return
+    }
+    try {
+      const out = this.exportCommitted(packageName, key, {folder, filename}, keepBlob)
+      this.hooks.sendResult(packageName, requestId, true, out)
+    } catch (err) {
+      const code = err instanceof BlobNotFoundError ? MiniappErrorCode.BLOB_NOT_FOUND : MiniappErrorCode.BLOB_WRITE_FAILED
+      this.fail(packageName, requestId, code, err)
+    }
+  }
+
+  /**
+   * Copy the committed file for `key` into Documents/<folder>/<filename>.
+   * Returns {uri, filename} of the destination. Throws BlobNotFoundError when
+   * the key is unknown; other throws are filesystem failures.
+   */
+  private exportCommitted(
+    packageName: string,
+    key: string,
+    hint: {folder: string; filename: string},
+    keepBlob: boolean,
+  ): {uri: string; filename: string} {
+    const meta = this.readMeta(packageName, key)
+    if (!meta) throw new BlobNotFoundError(`No blob for key ${key}`)
+    const src = this.fileFor(packageName, meta.fileName)
+    if (!src.exists) throw new BlobNotFoundError(`Blob file missing for key ${key}`)
+    const dir = exportDirFor(hint.folder)
+    const out = copyIntoDir(src, dir, sanitizeExportFilename(hint.filename, meta.name ?? key))
+    if (!keepBlob) {
+      // Move semantics: the export replaces blob storage for this payload.
+      this.dropMeta(packageName, meta)
+    }
+    return out
   }
 
   handleAbort(packageName: string, payload: Record<string, unknown>, requestId?: string): void {
@@ -727,12 +803,26 @@ export class BlobStore {
   onAppGone(packageName: string): void {
     this.closeAppHandles(packageName)
   }
-
-  /** Abort in-flight uploads + close open read handles for an app (no-op if none). */
+  /** Abort in-flight uploads + close open read handles for an app (no-op if none).
+   * Uploads carrying an export hint are COMMITTED rather than discarded: the
+   * miniapp asked for a user-visible file, and a disconnect mid-finalize must
+   * not silently drop a recording the user opted into. */
   private closeAppHandles(packageName: string): void {
     for (const [k, up] of this.uploads) {
       if (up.packageName === packageName) {
-        this.discardUpload(up)
+        if (up.exportHint) {
+          try {
+            up.handle.close()
+            up.partFile.rename(up.fileName)
+            this.commitFile(packageName, up.key, up.fileName, up.mimeType, up.name, up.meta)
+            this.exportCommitted(packageName, up.key, up.exportHint, false)
+          } catch (err) {
+            console.log(`${LOG_TAG}: orphan commit for ${up.key} failed`, err)
+            this.discardUpload(up)
+          }
+        } else {
+          this.discardUpload(up)
+        }
         this.uploads.delete(k)
       }
     }
@@ -827,3 +917,6 @@ function inferMime(name: string): string | undefined {
   }
   return map[ext]
 }
+
+/** Marker so handleExport can map "no such blob" to BLOB_NOT_FOUND. */
+class BlobNotFoundError extends Error {}

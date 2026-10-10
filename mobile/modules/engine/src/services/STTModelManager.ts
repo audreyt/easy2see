@@ -1,6 +1,6 @@
 import BluetoothSdk from "@mentra/bluetooth-sdk"
-import {Platform} from "react-native"
 import * as RNFS from "@dr.pogodin/react-native-fs"
+import {internalStoragePath, migrateDocumentsDirToAppSupport} from "./appPaths"
 
 export interface LanguageInfo {
   code: string
@@ -144,8 +144,10 @@ class STTModelManager {
   }
 
   getModelDirectory(): string {
-    const baseDir = Platform.OS === "ios" ? RNFS.DocumentDirectoryPath : RNFS.DocumentDirectoryPath
-    return `${baseDir}/stt_models`
+    // EASY2SEE: models live in Library/Application Support so Files (which
+    // exposes Documents via UIFileSharingEnabled) cannot delete them.
+    migrateDocumentsDirToAppSupport("stt_models")
+    return `${internalStoragePath(RNFS.DocumentDirectoryPath)}/stt_models`
   }
 
   getModelPath(code?: string): string {

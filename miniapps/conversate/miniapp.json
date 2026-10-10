@@ -1,0 +1,62 @@
+{
+  "$schema": "./node_modules/@mentra/miniapp-cli/schema/miniapp.schema.json",
+  "packageName": "org.audreyt.conversate",
+  "version": "0.1.3",
+  "name": "Easy2Say",
+  "description": "On-device conversation assistant: live transcription, AI cues (concepts, bios, answers, suggestions) on the glasses, optional translation, and a post-conversation review — all computed on the phone, nothing leaves the device.",
+  "type": "standard",
+  "sdkVersion": "0.3.0",
+  "minHostVersion": "1.42.0",
+  "port": 3111,
+  "entry": {
+    "background": "background/index.js",
+    "ui": "ui/index.html"
+  },
+  "permissions": [
+    {
+      "type": "MICROPHONE",
+      "description": "Used for live transcription and AI cues"
+    }
+  ],
+  "hardwareRequirements": [
+    {
+      "type": "DISPLAY",
+      "level": "OPTIONAL",
+      "description": "Shows live cues and transcription on display glasses; the phone UI works without one"
+    },
+    {
+      "type": "MICROPHONE",
+      "level": "REQUIRED",
+      "description": "Captures speech for transcription and cues"
+    }
+  ],
+  "icon": "icon.png",
+  "actions": [
+    {
+      "id": "start_conversate",
+      "description": "Start an Easy2Say session: listens to the conversation on-device, shows AI cues (concepts, bios, answers, suggestions) on the glasses, optionally translates, and produces a post-conversation review. Use when the user wants conversation assistance, live cues, or 'easy2say'. Pass language to set the conversation language and targetLanguage to enable translation; omit both to keep saved choices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string",
+            "description": "The conversation's spoken language as a BCP-47 code (e.g. 'en', 'zh-TW', 'ja'). Use 'zh-TW' for Traditional Chinese; bare 'zh' means Simplified. Omit to keep the saved language."
+          },
+          "targetLanguage": {
+            "type": "string",
+            "description": "Optional translation target as a BCP-47 code. When set, live translation turns on and cues can be generated in this language. Omit to keep the saved translation setting."
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "language": {"type": "string"},
+          "targetLanguage": {"type": "string"},
+          "status": {"type": "string"}
+        },
+        "required": ["language", "status"]
+      }
+    }
+  ]
+}

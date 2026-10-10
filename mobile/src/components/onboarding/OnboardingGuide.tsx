@@ -3,7 +3,7 @@ import {useVideoPlayer, VideoView, VideoSource, VideoPlayer} from "expo-video"
 import {ReactNode, useState, useCallback, useEffect, useMemo, useRef} from "react"
 import {View, ViewStyle, ActivityIndicator, Platform, Animated, ScrollView} from "react-native"
 
-import {MentraLogoStandalone} from "@/components/brands/MentraLogoStandalone"
+import {AppMark} from "@/components/brands/AppMark"
 import {Text, Button, Header, Icon} from "@/components/ignite"
 import {focusEffectPreventBack} from "@/contexts/NavigationHistoryContext"
 import {useAppTheme} from "@/contexts/ThemeContext"
@@ -1026,12 +1026,12 @@ export function OnboardingGuide({
         {showHeader && (
           <Header
             leftIcon={showCloseButton && hasStarted ? "x" : undefined}
-            MiddleActionComponent={!hasStarted ? <MentraLogoStandalone /> : undefined}
+            MiddleActionComponent={!hasStarted ? <AppMark /> : undefined}
             RightActionComponent={
               hasStarted ? (
                 <View className={`flex flex-row gap-2 items-center justify-center`}>
                   {showCounter && <Text className="text-center text-sm font-medium" text={counter} />}
-                  <MentraLogoStandalone />
+                  <AppMark />
                 </View>
               ) : undefined
             }

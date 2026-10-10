@@ -19,6 +19,7 @@ import {GlassesStatus, ControllerStatus} from "@/components/home/DeviceStatus"
 import {attemptReconnectToDefaultWearable} from "@/effects/Reconnect"
 import {useSaferAreaInsets} from "@/contexts/SaferAreaContext"
 import AllAppsGridSheet from "@/components/home/AllAppsGridSheet"
+import {applyE2sLaunchHook} from "@/utils/e2sLaunchHook"
 import BottomSheet from "@gorhom/bottom-sheet"
 import {BlurTargetView, BlurView} from "expo-blur"
 
@@ -53,6 +54,10 @@ export default function Homepage() {
       }, 250)
     }, [refreshApps]),
   )
+
+  useEffect(() => {
+    applyE2sLaunchHook()
+  }, [])
 
   useEffect(() => {
     const attemptInitialConnect = async () => {

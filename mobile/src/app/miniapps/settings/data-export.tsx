@@ -25,6 +25,7 @@ import {engine} from "@mentra/engine"
 import {ThemedStyle} from "@/theme"
 import {showAlert} from "@/utils/AlertUtils"
 import type {MentraAuthSession, MentraAuthUser} from "@/utils/auth/authProvider.types"
+import {isEasy2SeeBuild} from "@/services/deployment/officialManifest"
 
 /**
  * The account profile as the current auth providers report it
@@ -276,10 +277,11 @@ export default function DataExportPage() {
     setSharing(true)
     try {
       const filename = DataExportService.generateFilename()
+      const exportTitle = `${isEasy2SeeBuild() ? "Easy2See" : "MentraOS"} Data Export - ${filename}`
 
       const result = await Share.share({
-        message: Platform.OS === "ios" ? `MentraOS Data Export - ${filename}\n\n${jsonString}` : jsonString,
-        title: `MentraOS Data Export - ${filename}`,
+        message: Platform.OS === "ios" ? `${exportTitle}\n\n${jsonString}` : jsonString,
+        title: exportTitle,
       })
 
       if (result.action === Share.sharedAction) {

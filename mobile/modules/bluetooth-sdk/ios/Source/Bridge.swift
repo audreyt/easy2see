@@ -502,6 +502,41 @@ class Bridge {
         Bridge.sendTypedMessage("local_transcription", body: transcription)
     }
 
+    /**
+     * Send an on-device Apple Speech+Translation result (the Easy2Say stack)
+     * to JavaScript. `text` is the translated text; `originalText` carries the
+     * recognized source-language text when the pipeline surfaces it.
+     */
+    static func sendLocalTranslation(translation: [String: Any]) {
+        guard let text = translation["text"] as? String, !text.isEmpty else {
+            Bridge.log("Skipping empty translation result")
+            return
+        }
+
+        Bridge.sendTypedMessage("local_translation", body: translation)
+    }
+
+    /**
+     * Report that the on-device translation hop cannot serve the active
+     * pairs after activation — TranslationSession.prepareTranslation or
+     * translate threw, or no session arrived within the wait window.
+     * `reason` carries the probe verdict that let the hop activate. JS
+     * reconciles the pair onto the cloud subscription set.
+     */
+    static func sendLocalTranslationUnavailable(reason: String) {
+        Bridge.sendTypedMessage("local_translation_unavailable", body: ["reason": reason])
+    }
+
+    /**
+     * Report that the transcribe-only Apple Speech pipeline (Contract A)
+     * cannot serve the active locales — every lane gave up. `reason` carries
+     * the failure class (e.g. "speech-recognizer-failed"). JS reconciles the
+     * affected streams to Sherpa or reports them unavailable to miniapps.
+     */
+    static func sendLocalTranscriptionUnavailable(reason: String) {
+        Bridge.sendTypedMessage("local_transcription_unavailable", body: ["reason": reason])
+    }
+
     // Bluetooth SDK bridge funcs:
 
     static func sendserialNumber(_ serialNumber: String, style: String, color: String) {

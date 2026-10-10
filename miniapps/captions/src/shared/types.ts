@@ -21,12 +21,16 @@ export type CaptionPosition = "top" | "bottom"
 export interface CaptionSettings {
   language: string
   languageHints: string[]
-  useOfflineStt: boolean
   displayLines: number
   displayWidth: number
   captionPosition: CaptionPosition
   wordBreaking: boolean
   captionTimeoutSeconds: number
+}
+
+/** Why no transcript is arriving, surfaced to the UI as a visible banner. */
+export interface SpeechStatus {
+  hint: string
 }
 
 /** Display capabilities needed by the settings UI. */
@@ -78,4 +82,5 @@ export interface CaptionsSnapshot {
   displayPreview: DisplayPreview | null
   cloudStatus: CloudClientStatus
   displayCapabilities: CaptionsDisplayCapabilities
+  speechStatus: SpeechStatus | null
 }

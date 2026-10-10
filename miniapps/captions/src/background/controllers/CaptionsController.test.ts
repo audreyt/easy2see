@@ -1,4 +1,4 @@
-import {afterEach, describe, expect, mock, test} from "bun:test"
+import {afterEach, describe, expect, mock, test, vi} from "bun:test"
 
 import {DEFAULT_CAPTION_TIMEOUT_SECONDS} from "../../shared/types"
 import {CaptionsController, isSupportedCaptionTimeoutSeconds} from "./CaptionsController"
@@ -150,99 +150,174 @@ describe("CaptionsController caption timeout", () => {
   })
 })
 
-describe("CaptionsController offline speech to text", () => {
-  test("restores the persisted setting", async () => {
-    const get = mock((key: string) => Promise.resolve(key === "useOfflineStt" ? "true" : null))
-    const controller = new CaptionsController({
-      storage: {get},
-    } as never) as unknown as {
-      settings: {useOfflineStt: boolean}
-      loadSettings: () => Promise<void>
-    }
-
-    await controller.loadSettings()
-
-    expect(controller.settings.useOfflineStt).toBe(true)
-  })
-
-  test("persists the setting and rebuilds the subscription with forceLocal", async () => {
-    const previousCleanup = mock(() => {})
-    const nextCleanup = mock(() => {})
-    const on = mock((_handler: (data: unknown) => void, _options?: {forceLocal?: boolean}) => nextCleanup)
-    const set = mock(() => Promise.resolve())
-    const send = mock(() => {})
-
-    const controller = new CaptionsController({
-      storage: {set},
-      transcription: {
-        configure: mock(() => Promise.resolve()),
-        on,
-      },
-    } as never) as unknown as {
-      settings: {useOfflineStt: boolean}
-      ui: {send: typeof send}
-      transcriptionCleanup: () => void
-      setUseOfflineStt: (enabled: boolean) => Promise<void>
-    }
-    controller.ui = {send}
-    controller.transcriptionCleanup = previousCleanup
-
-    await controller.setUseOfflineStt(true)
-
-    expect(previousCleanup).toHaveBeenCalledTimes(1)
-    expect(set).toHaveBeenCalledWith("useOfflineStt", "true")
-    expect(on).toHaveBeenCalledTimes(1)
-    expect(on.mock.calls[0]?.[1]).toEqual({forceLocal: true})
-    expect(send).toHaveBeenCalledWith("captions:settings-update", expect.objectContaining({useOfflineStt: true}))
-  })
-
-  test("returns to cloud transcription when the setting is disabled", async () => {
-    const on = mock((_handler: (data: unknown) => void, _options?: {forceLocal?: boolean}) => mock(() => {}))
+describe("CaptionsController local speech to text", () => {
+  test("every subscription is forceLocal with engine auto and never requests cloud", async () => {
+    const on = mock((_handler: (data: unknown) => void, _options?: unknown) => mock(() => {}))
+    const forLanguage = mock(
+      (_language: string, _handler: (data: unknown) => void, _options?: unknown) => mock(() => {}),
+    )
+    const send = mock(() => undefined)
     const controller = new CaptionsController({
       storage: {set: mock(() => Promise.resolve())},
       transcription: {
         configure: mock(() => Promise.resolve()),
         on,
-      },
-    } as never) as unknown as {
-      settings: {useOfflineStt: boolean}
-      ui: {send: () => void}
-      setUseOfflineStt: (enabled: boolean) => Promise<void>
-    }
-    controller.settings.useOfflineStt = true
-    controller.ui = {send: mock(() => {})}
-
-    await controller.setUseOfflineStt(false)
-
-    expect(on).toHaveBeenCalledTimes(1)
-    expect(on.mock.calls[0]?.[1]).toEqual({})
-  })
-
-  test("uses the local model for a selected language", () => {
-    const forLanguage = mock(
-      (_language: string, _handler: (data: unknown) => void, _options?: {forceLocal?: boolean}) => mock(() => {}),
-    )
-    const controller = new CaptionsController({
-      transcription: {
-        configure: mock(() => Promise.resolve()),
         forLanguage,
       },
+      ui: {send, on: mock(() => () => undefined), onOpen: mock(() => () => undefined)},
     } as never) as unknown as {
-      settings: {
-        language: string
-        languageHints: string[]
-        useOfflineStt: boolean
-      }
+      settings: {language: string; languageHints: string[]}
       subscribeTranscription: () => void
+      setLanguage: (language: string) => Promise<void>
+      ui: {send: typeof send}
     }
-    controller.settings.language = "fr-FR"
-    controller.settings.languageHints = []
-    controller.settings.useOfflineStt = true
+    controller.ui = {send} // start() normally binds session.ui
 
+    // auto → transcription.on
+    controller.settings.language = "auto"
     controller.subscribeTranscription()
+    expect(on).toHaveBeenCalledTimes(1)
+    expect(on.mock.calls[0]?.[1]).toEqual({forceLocal: true, engine: "auto"})
+    expect(on.mock.calls[0]?.[1]).not.toHaveProperty("includeCloud")
 
+    // pinned language → forLanguage with the same local-only options
+    await controller.setLanguage("fr-FR")
     expect(forLanguage).toHaveBeenCalledTimes(1)
     expect(forLanguage.mock.calls[0]?.[0]).toBe("fr-FR")
-    expect(forLanguage.mock.calls[0]?.[2]).toEqual({forceLocal: true})
+    expect(forLanguage.mock.calls[0]?.[2]).toEqual({forceLocal: true, engine: "auto"})
+    expect(forLanguage.mock.calls[0]?.[2]).not.toHaveProperty("includeCloud")
+
+    // re-subscribing (language change) keeps the same options
+    await controller.setLanguage("zh-TW")
+    expect(forLanguage).toHaveBeenCalledTimes(2)
+    expect(forLanguage.mock.calls[1]?.[0]).toBe("zh-TW")
+    expect(forLanguage.mock.calls[1]?.[2]).toEqual({forceLocal: true, engine: "auto"})
+  })
+
+  test("stored cloud-only languages and hints are sanitized to local tags", async () => {
+    const get = mock((key: string) =>
+      Promise.resolve(
+        key === "language" ? "Chinese (Pinyin)" : key === "languageHints" ? '["fr","sw","zh-Hant"]' : null,
+      ),
+    )
+    const controller = new CaptionsController({
+      storage: {get},
+    } as never) as unknown as {
+      settings: {language: string; languageHints: string[]}
+      loadSettings: () => Promise<void>
+    }
+
+    await controller.loadSettings()
+
+    // "Chinese (Pinyin)" has no local route → auto; sw (Swahili) is dropped,
+    // fr and zh-Hant normalize to registry tags.
+    expect(controller.settings.language).toBe("auto")
+    expect(controller.settings.languageHints).toEqual(["fr-FR", "zh-TW"])
+  })
+
+  test("no speaker label is fabricated for on-device transcripts", async () => {
+    const send = mock(() => undefined)
+    const controller = new CaptionsController({
+      ui: {send},
+      display: {render: mock(() => Promise.resolve({status: "rendered"}))},
+    } as never) as unknown as {
+      handleTranscription: (data: {text: string; isFinal: boolean}) => Promise<void>
+      ui: {send: typeof send}
+    }
+    controller.ui = {send} // start() normally binds session.ui
+
+    await controller.handleTranscription({text: "hello", isFinal: true})
+
+    const frame = send.mock.calls.find((c) => c[0] === "captions:live-transcript")?.[1] as
+      | {speaker: string}
+      | undefined
+    expect(frame?.speaker).toBe("")
+  })
+})
+
+describe("CaptionsController no-transcript watchdog", () => {
+  // The watchdog is a real setTimeout; fake timers drive it deterministically.
+  function makeWatchdogController(language: string, stallMs = 30) {
+    const send = mock(() => undefined)
+    const render = mock(() => Promise.resolve({status: "rendered" as const}))
+    let handler: ((data: {text: string; isFinal: boolean}) => void) | undefined
+    const session = {
+      transcription: {
+        configure: mock(() => Promise.resolve()),
+        on: mock((h: typeof handler) => {
+          handler = h
+          return () => {}
+        }),
+        forLanguage: mock((_l: string, h: typeof handler) => {
+          handler = h
+          return () => {}
+        }),
+      },
+      ui: {send},
+      display: {render},
+      capabilities: {display: {width: 576, height: 288, canPosition: true, maxTextLines: 8}},
+    }
+    const controller = new CaptionsController(session as never, stallMs) as unknown as {
+      settings: {language: string; languageHints: string[]}
+      subscribeTranscription: () => void
+      speechStatus: {hint: string} | null
+      ui: {send: typeof send}
+    }
+    controller.ui = {send} // start() normally binds session.ui; tests skip start()
+    controller.settings.language = language
+    controller.settings.languageHints = []
+    return {controller, send, render, getHandler: () => handler}
+  }
+
+  test("fires a visible hint on phone and glasses, then clears on first transcript", () => {
+    vi.useFakeTimers()
+    try {
+      const {controller, send, render, getHandler} = makeWatchdogController("en-US")
+      controller.subscribeTranscription()
+
+      // Nothing arrives within the window → Sherpa hint on both surfaces.
+      vi.advanceTimersByTime(31)
+      expect(controller.speechStatus?.hint).toBe("No speech model — Settings › Speech")
+      expect(send).toHaveBeenCalledWith("captions:speech-status", {hint: "No speech model — Settings › Speech"})
+      expect(render).toHaveBeenCalledWith(
+        [expect.objectContaining({type: "text", text: "No speech model — Settings › Speech"})],
+        expect.objectContaining({includeTextLayout: true}),
+      )
+
+      // First transcript clears the status and the hint is retracted on the bus.
+      getHandler()?.({text: "it works", isFinal: true})
+      expect(controller.speechStatus).toBeNull()
+      expect(send).toHaveBeenCalledWith("captions:speech-status", null)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test("an Apple-routed language gets the on-device hint instead", () => {
+    vi.useFakeTimers()
+    try {
+      const {controller} = makeWatchdogController("zh-TW")
+      controller.subscribeTranscription()
+      vi.advanceTimersByTime(31)
+      expect(controller.speechStatus?.hint).toBe(
+        "On-device speech unavailable — check Settings › Speech Recognition",
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test("a transcript inside the window never fires the hint", () => {
+    vi.useFakeTimers()
+    try {
+      const {controller, send, getHandler} = makeWatchdogController("auto")
+      controller.subscribeTranscription()
+      getHandler()?.({text: "speech arrived", isFinal: false})
+      vi.advanceTimersByTime(60)
+      expect(controller.speechStatus).toBeNull()
+      expect(send).not.toHaveBeenCalledWith("captions:speech-status", expect.anything())
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

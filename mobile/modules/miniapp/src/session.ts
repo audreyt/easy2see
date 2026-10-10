@@ -55,6 +55,7 @@ import {
   parseMeetingRecovery,
   parseMeetingSoftApProgress,
 } from "./modules/meeting"
+import {LlmModule} from "./modules/llm"
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -283,6 +284,11 @@ export class MiniappSession<TChannels extends object = any> {
    * declared action; `handle` (open to all) exposes one of your own.
    */
   public readonly actions: ActionsModule
+  /**
+   * On-device Apple Foundation Models (`session.llm`) — stateless local
+   * generation with optional JSON-Schema guided output. Never cloud.
+   */
+  public readonly llm: LlmModule
 
   /** Phone-declared glasses capabilities. Null until CONNECT_ACK arrives. */
   public capabilities: GlassesCapabilities | null = null
@@ -375,6 +381,7 @@ export class MiniappSession<TChannels extends object = any> {
     this.ui = new UIModuleImpl<TChannels>(this)
     this.miniapps = new MiniappsModule(this)
     this.actions = new ActionsModule(this)
+    this.llm = new LlmModule(this)
   }
 
   /**
@@ -448,7 +455,7 @@ export class MiniappSession<TChannels extends object = any> {
   _subscribe(
     streamType: string,
     handler: (data: unknown) => void,
-    options: {forceLocal?: boolean} = {},
+    options: {forceLocal?: boolean; engine?: "auto" | "sherpa" | "apple"} = {},
   ): UnsubscribeFn {
     return this.events.subscribe(streamType, handler, options)
   }
