@@ -1,155 +1,71 @@
-<div align="center">
-  <img src="./images/Github-Readme.png" alt="Mentra: The open source smart glasses operating system" width="100%" />
+# Easy2See
 
-  <p>
-    <a href="https://mentra.glass">Website</a> •
-    <a href="https://docs.mentra.glass">Documentation</a> •
-    <a href="https://console.mentra.glass">Developer Console</a> •
-    <a href="https://apps.mentra.glass">Mentra MiniApp Store</a>
-  </p>
+Words you can see, *right when you need them.*
 
-  <!--
-  <p>
-    <img src="https://img.shields.io/github/contributors/TeamOpenSmartGlasses/DiscussPlusPlus" alt="Contributors" />
-    <img src="https://img.shields.io/github/license/TeamOpenSmartGlasses/DiscussPlusPlus" alt="License" />
-    <img src="https://img.shields.io/github/stars/TeamOpenSmartGlasses/DiscussPlusPlus?style=social" alt="GitHub Stars" />
-    <img src="https://img.shields.io/github/v/release/TeamOpenSmartGlasses/DiscussPlusPlus" alt="GitHub Release Version" />
-    <img src="https://img.shields.io/github/last-commit/TeamOpenSmartGlasses/DiscussPlusPlus" alt="Last Updated" />
-  </p>
-  -->
-</div>
+Easy2See turns speech into live captions and translation on your phone, and puts a teleprompter on supported display glasses such as Even G2. No account. Your content stays on your device.
 
-<div align="center">
-  <a href="https://apps.apple.com/us/app/mentra-the-smart-glasses-app/id6747363193">
-    <img src="./images/AppStoreBadge.png" alt="Download on the App Store" width="180">
-  </a>
-  <a href="https://play.google.com/store/apps/details?id=com.mentra.mentra">
-    <img src="./images/GooglePlayBadge.png" alt="Get it on Google Play" width="180">
-  </a>
-</div>
+[Website](https://easy2see.app/) •
+[Support](https://easy2see.app/support/) •
+[Privacy](https://easy2see.app/privacy/) •
+[Source](https://github.com/audreyt/easy2see)
 
-## Write Once, Run on Any Smart Glasses
+> **Status:** Easy2See's first App Store release is being prepared. It is not yet available to download.
 
-MentraOS is how developers and businesses build smart glasses apps.
+## What Easy2See does
 
-MentraOS handles pairing, connection, data streaming, hardware access, and cross-device compatibility, so you can focus on building amazing apps. Development goes from months to days.
+| Feature | What it does | Needs |
+|---|---|---|
+| Live captions | See what is being said as it is said, on your phone screen. | Works without glasses |
+| Translation | Read speech translated into another language. | Works without glasses |
+| Teleprompter | Load a script and read it hands-free on the glasses display. | Needs display glasses, such as Even G2 |
+| Recorder | Record audio and export it as a WAV file when you choose to. | WAV export |
+| Easy2Say | Conversation support that helps you reply, with AI cues on devices that support them. | AI cues need iOS 26+ and Apple Intelligence |
 
-Every component is open source under the Apache License 2.0, giving you privacy, freedom, and control.
+## Built to stay on your device
 
-## Supported Smart Glasses
+Captions, translation, teleprompter, Recorder WAV exports and Easy2Say conversation AI run locally. The developer does not receive your speech, transcripts, scripts or recordings.
 
-MentraOS works across a growing ecosystem of smart glasses.
+There is no account to create, and Easy2See does not include app analytics or crash-reporting services. Read the [privacy policy](https://easy2see.app/privacy/) for the details.
 
-<div align="center">
-  <table border="0" cellspacing="0" cellpadding="0" width="100%" style="border: 0 !important; border-collapse: separate; border-spacing: 8px;">
-    <tbody>
-      <tr style="border: 0 !important; background: transparent;">
-        <td align="center" valign="top" width="20%" style="border: 1px solid #e5e7eb; border-radius: 14px; padding: 24px 12px 12px; background: #ffffff;">
-          <br />
-          <img src="./images/glasses/mentra-live.png" alt="Mentra Live" width="140" />
-          <br /><br />
-          <p align="center"><b>Mentra Live</b></p>
-        </td>
-        <td align="center" valign="top" width="20%" style="border: 1px solid #bbf7d0; border-radius: 14px; padding: 24px 12px 12px; background: #ffffff;">
-          <br />
-          <img src="./images/glasses/even-realities-g2.png" alt="Even Realities G2" width="140" />
-          <br /><br />
-          <p align="center"><b>Even Realities G2</b></p>
-        </td>
-        <td align="center" valign="top" width="20%" style="border: 1px solid #e5e7eb; border-radius: 14px; padding: 24px 12px 12px; background: #ffffff;">
-          <br />
-          <img src="./images/glasses/vuzix-z100.png" alt="Vuzix Z100" width="140" />
-          <br /><br />
-          <p align="center"><b>Vuzix Z100</b></p>
-        </td>
-        <td align="center" valign="top" width="20%" style="border: 1px solid #e5e7eb; border-radius: 14px; padding: 24px 12px 12px; background: #ffffff;">
-          <br />
-          <img src="./images/glasses/even-realities-g1.png" alt="Even Realities G1" width="140" />
-          <br /><br />
-          <p align="center"><b>Even Realities G1</b></p>
-        </td>
-        <td align="center" valign="top" width="20%" style="border: 1px solid #fed7aa; border-radius: 14px; padding: 24px 12px 12px; background: #ffffff;">
-          <br />
-          <img src="./images/glasses/nimo.png" alt="NIMO" width="95" />
-          <br /><br />
-          <p align="center"><b>NIMO&nbsp;(Coming&nbsp;Soon)</b></p>
-        </td>
-      </tr>
-    </tbody>
-  </table>
-</div>
+## Requirements
 
-## Why Build with MentraOS?
+- An iPhone that can run the app.
+- Microphone and speech recognition access for captions and translation.
+- Supported display glasses, such as Even G2, for the glasses teleprompter.
+- iOS 26 or later with Apple Intelligence available, for AI cues.
 
-- **Cross-Compatibility:** Build one app that runs on supported smart glasses from multiple manufacturers.
-- **Fast Development:** Go from months of custom smart glasses development to a working app in days.
-- **Hardware Access:** Use displays, microphones, cameras, speakers, and everything else smart glasses expose from one API.
-- **App Distribution:** Publish to the Mentra MiniApp Store and reach users across the MentraOS ecosystem.
-- **Business Deployment:** Deploy smart glasses apps for field work, remote support, training, accessibility, and compliance-sensitive workflows. MentraOS is already being deployed by Fortune 500 companies.
-- **Open Source Control:** Own it, host it, modify it, and extend it. MentraOS is Apache-2.0-licensed infrastructure designed for privacy, transparency, and freedom from hardware or cloud lock-in.
+## Setup
 
-## Apps on the Mentra MiniApp Store
+Captions and translation work on your phone alone: open Easy2See and choose "Set up without glasses", allow microphone and speech recognition access, prepare the language models you want to use, then choose captions or translation and start.
 
-Browse, install, and run glasses apps from your phone. Try captions, AI notes, proactive AI, translation, streaming, and more.
+The teleprompter needs supported glasses with a display, such as Even G2. Mentra Live has no display and cannot show captions or teleprompter text. Pair the glasses in the app over Bluetooth; camera, photos and local network access are each optional and only needed for the feature that uses them.
 
-<div align="center">
-  <img src="./images/Mockup_appshomepage.png" alt="MentraOS glasses apps homepage" width="364" />
-</div>
+Some language and speech models are downloaded to your phone before first use from Apple and GitHub hosting. Full steps and troubleshooting are on the [support page](https://easy2see.app/support/).
 
-## How MentraOS Works
+## Built on MentraOS
 
-MentraOS runs glasses apps on the phone inside the Mentra Runtime. Multiple glasses apps can run simultaneously, controlling your smart glasses through one shared connection.
+Easy2See is derived from [MentraOS](https://github.com/Mentra-Community/MentraOS), the open source operating system, app store and development framework for smart glasses, created by Mentra Labs, Inc. and the MentraOS contributors. Easy2See starts from their code and inherits the app, the glasses connection and the miniapp runtime from their work. Thank you to Mentra Labs and to every contributor.
 
-This keeps the glasses lightweight while letting multiple apps run together, like captions, notes, notifications, dashboard, and AI tools. It also allows one app to work with any pair of supported smart glasses.
+MentraOS is released under the [Apache-2.0 license](https://github.com/Mentra-Community/MentraOS/blob/HEAD/LICENSE). [Source](https://github.com/Mentra-Community/MentraOS) and [contributors](https://github.com/Mentra-Community/MentraOS/graphs/contributors) are on GitHub. Easy2See is an independently modified fork. It is not affiliated with or endorsed by Mentra Labs, Inc.
 
-Manufacturers can integrate the Mentra Runtime into their own iOS and Android apps to unlock the Mentra ecosystem while preserving their brand, app, and customer relationship.
+## Why a fork
 
-## Nightly Builds
+MentraOS is a general platform: the Mentra App runs miniapps on your phone and connects to Mentra's cloud services. This fork is narrower on purpose. It is an account-free, on-device variant that focuses on captions, translation, a teleprompter and local conversation AI.
 
-<div align="center">
-  <p>
-    <a href="https://github.com/TeamOpenSmartGlasses/DiscussPlusPlus/releases/download/nightly-builds/mobile-latest.apk">
-      <img src="https://img.shields.io/badge/Mobile_App-Download_APK-blue?style=for-the-badge&logo=android" alt="Download Mobile APK" />
-    </a>
-    <a href="https://github.com/TeamOpenSmartGlasses/DiscussPlusPlus/releases/download/nightly-builds/asg-latest.apk">
-      <img src="https://img.shields.io/badge/ASG_Client-Download_APK-green?style=for-the-badge&logo=android" alt="Download ASG APK" />
-    </a>
-  </p>
-</div>
+It disables Mentra cloud sessions and telemetry, so your speech and transcripts stay on your phone. It is built for display glasses such as Even G2, and it also works with only your phone for captions, translation and review.
 
-## Community
+If you want the full platform, the miniapp store or Mentra's own glasses, use the Mentra App. Easy2See is maintained independently; send questions about it to [au@civic.ai](mailto:au@civic.ai), not to Mentra.
 
-MentraOS is built by developers, companies, and users who believe the next personal computer should be open, cross-compatible, private, and user-controlled.
+## This repository
 
-Join us and become part of the Mentra Community by joining our Discord server:  
-[https://mentra.glass/discord](https://mentra.glass/discord)
+This repo holds the Easy2See fork: the app in `mobile/`, the bundled on-device miniapps in `miniapps/` (captions, translation, teleprompter, conversate), and this product's website source in `cloud-v2/websites/easy2see/` (deployed to [easy2see.app](https://easy2see.app/)).
 
-## Contributing
+Upstream development happens at [Mentra-Community/MentraOS](https://github.com/Mentra-Community/MentraOS); this fork tracks its `dev` branch. Build and contribution guidance for the codebase lives in [AGENTS.md](./AGENTS.md).
 
-MentraOS is made by a community and we welcome pull requests.
+## Support
 
-**Contributor guide:**  
-[https://docs.mentraglass.com/os-devs/contributing/overview](https://docs.mentraglass.com/os-devs/contributing/overview)
-
-Looking for ways to contribute? We mark issues we'd love the community to help with using the "Help Wanted" tag.
-
-**Help wanted issues:**  
-[https://github.com/Mentra-Community/MentraOS/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22help%20wanted%22](https://github.com/Mentra-Community/MentraOS/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22help%20wanted%22)
-
-## Contact
-
-- **Email:** [team@mentra.glass](mailto:team@mentra.glass)
-- **Discord:** [https://mentra.glass/discord](https://mentra.glass/discord)
-- **X:** [https://x.com/mentraglass](https://x.com/mentraglass)
+Email [au@civic.ai](mailto:au@civic.ai?subject=Easy2See%20support) with your iPhone model, iOS version, and what you were doing when the problem happened. Please do not attach recordings or other sensitive content.
 
 ## License
 
-Apache License 2.0
-
-Copyright 2026 Mentra Labs, Inc.
-
-<div align="center">
-  <br />
-  <img width="100" alt="MentraOS" src="./images/MentraLogoWhiteSquare.svg" style="border-radius: 20%;" />
-  <h3>© 2026 Mentra Labs, Inc.</h3>
-</div>
+Apache License 2.0. This fork's modifications are by Audrey Tang; the upstream MentraOS code is copyright Mentra Labs, Inc. and contributors.
